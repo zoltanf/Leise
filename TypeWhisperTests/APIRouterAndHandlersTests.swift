@@ -4557,6 +4557,70 @@ final class HotkeyServiceCompatibilityTests: XCTestCase {
     }
 
     @MainActor
+    func testGenericModifierComboTriggersOnlyForExactModifiers() throws {
+        let service = HotkeyService()
+        service.suspendMonitoring()
+
+        service.setHotkeyForTesting(controlShiftComboHotkey(), for: .toggle)
+
+        var startCount = 0
+        service.onDictationStart = { startCount += 1 }
+
+        let comboDown = try makeFlagsChangedEvent(keyCode: 0x38, modifierFlags: [.control, .shift])
+
+        XCTAssertTrue(service.processEventForTesting(comboDown, source: .monitor))
+        XCTAssertEqual(startCount, 1)
+    }
+
+    @MainActor
+    func testGenericModifierComboRejectsExtraModifiers() throws {
+        let service = HotkeyService()
+        service.suspendMonitoring()
+
+        service.setHotkeyForTesting(controlShiftComboHotkey(), for: .toggle)
+
+        var startCount = 0
+        service.onDictationStart = { startCount += 1 }
+
+        let commandControlShift = try makeFlagsChangedEvent(
+            keyCode: 0x38,
+            modifierFlags: [.command, .control, .shift]
+        )
+        let controlOptionShift = try makeFlagsChangedEvent(
+            keyCode: 0x38,
+            modifierFlags: [.control, .option, .shift]
+        )
+        let fnControlShift = try makeFlagsChangedEvent(
+            keyCode: 0x3F,
+            modifierFlags: [.function, .control, .shift]
+        )
+
+        XCTAssertFalse(service.processEventForTesting(commandControlShift, source: .monitor))
+        XCTAssertFalse(service.processEventForTesting(controlOptionShift, source: .monitor))
+        XCTAssertFalse(service.processEventForTesting(fnControlShift, source: .monitor))
+        XCTAssertEqual(startCount, 0)
+    }
+
+    @MainActor
+    func testSideSpecificModifierComboRejectsExtraPhysicalModifiers() throws {
+        let service = HotkeyService()
+        service.suspendMonitoring()
+
+        service.setHotkeyForTesting(try rightCommandRightOptionComboHotkey(), for: .toggle)
+
+        var startCount = 0
+        service.onDictationStart = { startCount += 1 }
+
+        let rightComboWithExtraLeftCommand = try makeFlagsChangedEvent(
+            keyCode: 0x37,
+            modifierFlags: flags(generic: [.command, .option], deviceKeyCodes: [0x36, 0x3D, 0x37])
+        )
+
+        XCTAssertFalse(service.processEventForTesting(rightComboWithExtraLeftCommand, source: .monitor))
+        XCTAssertEqual(startCount, 0)
+    }
+
+    @MainActor
     func testLegacyGenericModifierComboStillTriggersFromLeftAndRightSides() throws {
         let leftService = HotkeyService()
         leftService.suspendMonitoring()
@@ -5048,6 +5112,46 @@ final class HotkeyServiceCompatibilityTests: XCTestCase {
     }
 
     @MainActor
+    func testKeyWithModifiersRejectsExtraModifiers() throws {
+        let service = HotkeyService()
+        service.suspendMonitoring()
+
+        service.setHotkeyForTesting(commandOptionAHotkey(), for: .toggle)
+
+        var startCount = 0
+        service.onDictationStart = { startCount += 1 }
+
+        let keyDown = try makeKeyboardEvent(
+            keyCode: 0x00,
+            keyDown: true,
+            flags: [.maskCommand, .maskAlternate, .maskShift]
+        )
+
+        XCTAssertFalse(service.processEventForTesting(keyDown, source: .monitor))
+        XCTAssertEqual(startCount, 0)
+    }
+
+    @MainActor
+    func testProfileModifierComboRejectsExtraModifiers() throws {
+        let service = HotkeyService()
+        service.suspendMonitoring()
+
+        let profileId = UUID()
+        service.registerProfileHotkeys([(id: profileId, hotkey: controlShiftComboHotkey())])
+
+        var startedProfileId: UUID?
+        service.onProfileDictationStart = { startedProfileId = $0 }
+
+        let extraModifierDown = try makeFlagsChangedEvent(
+            keyCode: 0x38,
+            modifierFlags: [.command, .control, .shift]
+        )
+
+        XCTAssertFalse(service.processEventForTesting(extraModifierDown, source: .monitor))
+        XCTAssertNil(startedProfileId)
+    }
+
+    @MainActor
     func testWorkflowHotkeyInvokesDedicatedWorkflowCallback() throws {
         let service = HotkeyService()
         service.suspendMonitoring()
@@ -5130,6 +5234,28 @@ final class HotkeyServiceCompatibilityTests: XCTestCase {
     }
 
     @MainActor
+    func testWorkflowModifierComboRejectsExtraModifiers() throws {
+        let service = HotkeyService()
+        service.suspendMonitoring()
+
+        let workflowId = UUID()
+        service.registerWorkflowHotkeys([
+            (id: workflowId, hotkey: controlShiftComboHotkey(), behavior: .startDictation)
+        ])
+
+        var startedWorkflowId: UUID?
+        service.onWorkflowDictationStart = { startedWorkflowId = $0 }
+
+        let extraModifierDown = try makeFlagsChangedEvent(
+            keyCode: 0x38,
+            modifierFlags: [.command, .control, .shift]
+        )
+
+        XCTAssertFalse(service.processEventForTesting(extraModifierDown, source: .monitor))
+        XCTAssertNil(startedWorkflowId)
+    }
+
+    @MainActor
     private func spaceHotkey() -> UnifiedHotkey {
         UnifiedHotkey(
             keyCode: 0x31,
@@ -5143,6 +5269,15 @@ final class HotkeyServiceCompatibilityTests: XCTestCase {
         UnifiedHotkey(
             keyCode: 0x31,
             modifierFlags: NSEvent.ModifierFlags([.option, .command]).rawValue,
+            isFn: false
+        )
+    }
+
+    @MainActor
+    private func controlShiftComboHotkey() -> UnifiedHotkey {
+        UnifiedHotkey(
+            keyCode: UnifiedHotkey.modifierComboKeyCode,
+            modifierFlags: NSEvent.ModifierFlags([.control, .shift]).rawValue,
             isFn: false
         )
     }
@@ -5169,9 +5304,19 @@ final class HotkeyServiceCompatibilityTests: XCTestCase {
     }
 
     private func decodedCommandOptionComboHotkey(modifierKeyCodes: [UInt16]?) throws -> UnifiedHotkey {
+        try decodedModifierComboHotkey(
+            modifierFlags: [.command, .option],
+            modifierKeyCodes: modifierKeyCodes
+        )
+    }
+
+    private func decodedModifierComboHotkey(
+        modifierFlags: NSEvent.ModifierFlags,
+        modifierKeyCodes: [UInt16]?
+    ) throws -> UnifiedHotkey {
         var payload: [String: Any] = [
             "keyCode": Int(UnifiedHotkey.modifierComboKeyCode),
-            "modifierFlags": Int(NSEvent.ModifierFlags([.command, .option]).rawValue),
+            "modifierFlags": Int(modifierFlags.rawValue),
             "isFn": false,
             "isDoubleTap": false,
         ]

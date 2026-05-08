@@ -1060,8 +1060,8 @@ final class HotkeyService: ObservableObject {
             let current = event.modifierFlags.intersection(relevantMask)
             let activeModifierKeyCodes = Self.modifierKeyCodes(from: event.modifierFlags)
             let physicalModifiersMatch = hotkey.modifierKeyCodes.isEmpty
-                || hotkey.modifierKeyCodes.isSubset(of: activeModifierKeyCodes)
-            let allDown = current.contains(requiredFlags) && physicalModifiersMatch
+                || activeModifierKeyCodes == hotkey.modifierKeyCodes
+            let allDown = current == requiredFlags && physicalModifiersMatch
             let anyRequiredStillDown = hotkey.modifierKeyCodes.isEmpty
                 ? !current.intersection(requiredFlags).isEmpty
                 : !activeModifierKeyCodes.intersection(hotkey.modifierKeyCodes).isEmpty
