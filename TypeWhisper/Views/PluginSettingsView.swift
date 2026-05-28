@@ -1144,6 +1144,7 @@ private let typeWhisperAddonSlugsByPluginID: [String: String] = [
     "com.typewhisper.openrouter": "openrouter",
     "com.typewhisper.parakeet": "parakeet",
     "com.typewhisper.qwen3": "qwen3-asr",
+    "com.typewhisper.reson8": "reson8",
     "com.typewhisper.script": "script-runner",
     "com.typewhisper.smallest-pulse": "smallest-pulse",
     "com.typewhisper.soniox": "soniox",

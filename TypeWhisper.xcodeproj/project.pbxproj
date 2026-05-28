@@ -281,6 +281,10 @@
 		AA00000000000000000214 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000205 /* manifest.json */; };
 		AA00000000000000000215 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000206 /* Localizable.xcstrings */; };
 		AA00000000000000000216 /* TypeWhisperPluginSDK in Frameworks */ = {isa = PBXBuildFile; productRef = PP00000000000000000024 /* TypeWhisperPluginSDK */; };
+		RESB00000000000000001 /* Reson8Plugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = RESS00000000000000001 /* Reson8Plugin.swift */; };
+		RESB00000000000000002 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = RESS00000000000000002 /* manifest.json */; };
+		RESB00000000000000003 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = RESS00000000000000003 /* Localizable.xcstrings */; };
+		RESB00000000000000004 /* TypeWhisperPluginSDK in Frameworks */ = {isa = PBXBuildFile; productRef = RESK00000000000000001 /* TypeWhisperPluginSDK */; };
 		5A1100000000000000000001 /* SmallestAIPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1100000000000000000010 /* SmallestAIPlugin.swift */; };
 		5A1100000000000000000002 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 5A1100000000000000000011 /* manifest.json */; };
 		5A1100000000000000000003 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 5A1100000000000000000012 /* Localizable.xcstrings */; };
@@ -691,6 +695,10 @@
 		BB00000000000000000204 /* AssemblyAIPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssemblyAIPlugin.swift; sourceTree = "<group>"; };
 		BB00000000000000000205 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		BB00000000000000000206 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		RESS00000000000000001 /* Reson8Plugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reson8Plugin.swift; sourceTree = "<group>"; };
+		RESS00000000000000002 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
+		RESS00000000000000003 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		RESS00000000000000004 /* Reson8Plugin.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Reson8Plugin.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A1100000000000000000010 /* SmallestAIPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmallestAIPlugin.swift; sourceTree = "<group>"; };
 		5A1100000000000000000011 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		5A1100000000000000000012 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
@@ -1003,6 +1011,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		RESP00000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				RESB00000000000000004 /* TypeWhisperPluginSDK in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5A1100000000000000000051 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -1240,6 +1256,7 @@
 				CC00000000000000000027 /* VoxtralPlugin */,
 				CC00000000000000000028 /* DeepgramPlugin */,
 				CC00000000000000000029 /* AssemblyAIPlugin */,
+				RESG00000000000000001 /* Reson8Plugin */,
 				5A1100000000000000000020 /* SmallestAIPlugin */,
 				CC00000000000000000030 /* ObsidianPlugin */,
 				CC00000000000000000031 /* ScriptPlugin */,
@@ -1689,6 +1706,17 @@
 			path = TypeWhisperPluginSDK/Plugins/AssemblyAIPlugin;
 			sourceTree = "<group>";
 		};
+		RESG00000000000000001 /* Reson8Plugin */ = {
+			isa = PBXGroup;
+			children = (
+				RESS00000000000000001 /* Reson8Plugin.swift */,
+				RESS00000000000000002 /* manifest.json */,
+				RESS00000000000000003 /* Localizable.xcstrings */,
+			);
+			name = Reson8Plugin;
+			path = TypeWhisperPluginSDK/Plugins/Reson8Plugin;
+			sourceTree = "<group>";
+		};
 		5A1100000000000000000020 /* SmallestAIPlugin */ = {
 			isa = PBXGroup;
 			children = (
@@ -1991,6 +2019,7 @@
 				BB00000000000000000285 /* CoherePlugin.bundle */,
 				BB00000000000000000290 /* Gemma4Plugin.bundle */,
 				BB00000000000000000294 /* SpeechmaticsPlugin.bundle */,
+				RESS00000000000000004 /* Reson8Plugin.bundle */,
 				BB00000000000000000188 /* TypeWhisperWidgetExtension.appex */,
 				5CA4DB761B06383B5B8CF082 /* GoogleCloudSTTPlugin.bundle */,
 				E6F8E5940EF4832A7B8D735D /* TypeWhisperTests.xctest */,
@@ -2405,6 +2434,26 @@
 			);
 			productName = AssemblyAIPlugin;
 			productReference = BB00000000000000000203 /* AssemblyAIPlugin.bundle */;
+			productType = "com.apple.product-type.bundle";
+		};
+		RESN00000000000000001 /* Reson8Plugin */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = RESC00000000000000001 /* Build configuration list for PBXNativeTarget "Reson8Plugin" */;
+			buildPhases = (
+				RESP00000000000000001 /* Sources */,
+				RESP00000000000000002 /* Frameworks */,
+				RESP00000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Reson8Plugin;
+			packageProductDependencies = (
+				RESK00000000000000001 /* TypeWhisperPluginSDK */,
+			);
+			productName = Reson8Plugin;
+			productReference = RESS00000000000000004 /* Reson8Plugin.bundle */;
 			productType = "com.apple.product-type.bundle";
 		};
 		5A1100000000000000000040 /* SmallestAIPlugin */ = {
@@ -2980,6 +3029,7 @@
 				DD00000000000000000032 /* CoherePlugin */,
 				DD00000000000000000033 /* Gemma4Plugin */,
 				DD00000000000000000034 /* SpeechmaticsPlugin */,
+				RESN00000000000000001 /* Reson8Plugin */,
 				DD00000000000000000014 /* TypeWhisperWidgetExtension */,
 				40F22D3F350BA09ADEFBD2CB /* TypeWhisperTests */,
 				F3E17BDD5CED7E75F4153E95 /* GoogleCloudSTTPlugin */,
@@ -3133,6 +3183,15 @@
 			files = (
 				AA00000000000000000214 /* manifest.json in Resources */,
 				AA00000000000000000215 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		RESP00000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				RESB00000000000000002 /* manifest.json in Resources */,
+				RESB00000000000000003 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3707,6 +3766,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA00000000000000000213 /* AssemblyAIPlugin.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		RESP00000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				RESB00000000000000001 /* Reson8Plugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -4862,6 +4929,52 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.typewhisper.assemblyai;
 				PRODUCT_NAME = AssemblyAIPlugin;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				WRAPPER_EXTENSION = bundle;
+			};
+			name = Release;
+		};
+		RESCONF00000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Reson8;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = Reson8Plugin;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Bundles";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.typewhisper.reson8;
+				PRODUCT_NAME = Reson8Plugin;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				WRAPPER_EXTENSION = bundle;
+			};
+			name = Debug;
+		};
+		RESCONF00000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Reson8;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = Reson8Plugin;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Bundles";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.typewhisper.reson8;
+				PRODUCT_NAME = Reson8Plugin;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
@@ -6155,6 +6268,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		RESC00000000000000001 /* Build configuration list for PBXNativeTarget "Reson8Plugin" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				RESCONF00000000000001 /* Debug */,
+				RESCONF00000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		5A1100000000000000000062 /* Build configuration list for PBXNativeTarget "SmallestAIPlugin" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -6663,6 +6785,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D20600000000000000000001 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
 			productName = onnxruntime;
+		};
+		RESK00000000000000001 /* TypeWhisperPluginSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TypeWhisperPluginSDK;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -160,6 +160,16 @@ let package = Package(
             ]
         ),
         .target(
+            name: "Reson8Plugin",
+            dependencies: ["TypeWhisperPluginSDK"],
+            path: "Plugins/Reson8Plugin",
+            exclude: ["Tests"],
+            resources: [
+                .process("Localizable.xcstrings"),
+                .process("manifest.json"),
+            ]
+        ),
+        .target(
             name: "SmallestAIPlugin",
             dependencies: ["TypeWhisperPluginSDK"],
             path: "Plugins/SmallestAIPlugin",
