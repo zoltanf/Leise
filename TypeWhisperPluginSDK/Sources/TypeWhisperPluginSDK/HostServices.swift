@@ -262,7 +262,25 @@ public struct PluginAudioUploadFile: Sendable, Equatable {
 
 public enum PluginAudioUploadEncoder {
     public static let sampleRate = 16_000
+    public static let minimumUploadDuration: TimeInterval = 1.0
     private static let compressedUploadChunkFrames = 16_000 * 30
+
+    public static func normalizedAudioForUpload(_ audio: AudioData) -> AudioData {
+        guard audio.duration < minimumUploadDuration else { return audio }
+
+        let paddedSamples = PluginAudioUtils.paddedSamples(
+            audio.samples,
+            minimumDuration: minimumUploadDuration,
+            sampleRate: sampleRate
+        )
+        guard paddedSamples.count != audio.samples.count else { return audio }
+
+        return AudioData(
+            samples: paddedSamples,
+            wavData: PluginWavEncoder.encode(paddedSamples, sampleRate: sampleRate),
+            duration: Double(paddedSamples.count) / Double(sampleRate)
+        )
+    }
 
     public static func wavUpload(from audio: AudioData) -> PluginAudioUploadFile {
         PluginAudioUploadFile(
@@ -295,6 +313,28 @@ public enum PluginAudioUploadEncoder {
         )
     }
 
+    public static func withCompressedM4AUploadWavFallback<Result>(
+        from audio: AudioData,
+        operation: (PluginAudioUploadFile) async throws -> Result
+    ) async throws -> Result {
+        let uploadAudio = normalizedAudioForUpload(audio)
+        let preferredUpload: PluginAudioUploadFile
+        do {
+            preferredUpload = try compressedM4AUpload(from: uploadAudio)
+        } catch {
+            return try await operation(wavUpload(from: uploadAudio))
+        }
+
+        do {
+            return try await operation(preferredUpload)
+        } catch {
+            guard shouldRetryWithWavUpload(error: error) else {
+                throw error
+            }
+            return try await operation(wavUpload(from: uploadAudio))
+        }
+    }
+
     public static func shouldRetryWithWavUpload(statusCode: Int, responseData: Data) -> Bool {
         guard [400, 415, 422].contains(statusCode) else {
             return false
@@ -303,7 +343,8 @@ public enum PluginAudioUploadEncoder {
         guard statusCode != 415 else { return true }
 
         let message = String(data: responseData, encoding: .utf8) ?? ""
-        return indicatesUnsupportedAudioUpload(message)
+        return audioUploadErrorMessageCandidates(from: message)
+            .contains { indicatesUnsupportedAudioUpload($0) }
     }
 
     public static func shouldRetryWithWavUpload(error: Error) -> Bool {
@@ -323,17 +364,56 @@ public enum PluginAudioUploadEncoder {
             return false
         }
 
-        return indicatesUnsupportedAudioUpload(message)
+        return audioUploadErrorMessageCandidates(from: message)
+            .contains { indicatesUnsupportedAudioUpload($0) }
+    }
+
+    private static func audioUploadErrorMessageCandidates(from responseText: String) -> [String] {
+        let trimmed = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let jsonStart = trimmed.firstIndex(where: { $0 == "{" || $0 == "[" }) else {
+            return [trimmed]
+        }
+
+        let jsonText = String(trimmed[jsonStart...])
+        guard let data = jsonText.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) else {
+            return [trimmed]
+        }
+
+        return extractAudioUploadErrorMessages(from: object)
+    }
+
+    private static func extractAudioUploadErrorMessages(from object: Any) -> [String] {
+        let messageKeys = ["error", "message", "err_msg", "error_message", "detail", "description"]
+
+        if let message = object as? String {
+            return [message]
+        }
+
+        if let dictionary = object as? [String: Any] {
+            return messageKeys.flatMap { key -> [String] in
+                guard let value = dictionary[key] else { return [] }
+                return extractAudioUploadErrorMessages(from: value)
+            }
+        }
+
+        if let array = object as? [Any] {
+            return array.flatMap { extractAudioUploadErrorMessages(from: $0) }
+        }
+
+        return []
     }
 
     private static func indicatesUnsupportedAudioUpload(_ message: String) -> Bool {
         let lowercased = message.lowercased()
         let rejectionTerms = [
             "unsupported", "not supported", "does not support", "invalid", "unrecognized", "unknown",
+            "could not process", "failed to process", "corrupt",
         ]
         let mediaTerms = [
             "format", "media", "mime", "content-type", "content type",
-            "codec", "container", "file type", "m4a", "mp4", "aac", "wav",
+            "codec", "container", "file type", "audio",
+            "m4a", "mp4", "aac", "wav",
         ]
         return rejectionTerms.contains { lowercased.contains($0) }
             && mediaTerms.contains { lowercased.contains($0) }
