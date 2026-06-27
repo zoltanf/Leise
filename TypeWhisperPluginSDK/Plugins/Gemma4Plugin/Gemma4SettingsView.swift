@@ -350,13 +350,20 @@ struct Gemma4SettingsView: View {
         loadTask = nil
         isPolling = false
         Task {
-            try? await plugin.deleteDownloadedModel(modelDef.id)
-            await MainActor.run {
-                if selectedModelId == modelDef.id {
-                    selectedModelId = plugin.selectedLLMModelId ?? Gemma4Plugin.availableModels.first?.id ?? ""
+            do {
+                try await plugin.deleteDownloadedModel(modelDef.id)
+                await MainActor.run {
+                    if selectedModelId == modelDef.id {
+                        selectedModelId = plugin.selectedLLMModelId ?? Gemma4Plugin.availableModels.first?.id ?? ""
+                    }
+                    modelState = plugin.modelState
+                    downloadProgress = plugin.currentDownloadProgress
                 }
-                modelState = plugin.modelState
-                downloadProgress = plugin.currentDownloadProgress
+            } catch {
+                await MainActor.run {
+                    modelState = .error(error.localizedDescription)
+                    downloadProgress = plugin.currentDownloadProgress
+                }
             }
         }
     }

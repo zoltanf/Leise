@@ -125,6 +125,7 @@ final class Gemma4Plugin: NSObject, LLMProviderPlugin, LLMTemperatureControllabl
     private let modelLoadClock = ContinuousClock()
     private var lastModelLoadProgressInstant = ContinuousClock().now
     private var lastModelLoadProgressFraction = 0.0
+    private var activeModelLoadTask: (generation: Int, task: Task<ModelContainer, Error>)?
 
     private func modelsDirectory() -> URL {
         host?.pluginDataDirectory.appendingPathComponent("models")
@@ -440,24 +441,33 @@ final class Gemma4Plugin: NSObject, LLMProviderPlugin, LLMTemperatureControllabl
                     id: modelDef.repoId,
                     extraEOSTokens: ["<turn|>"]
                 )
-            let container = try await VLMModelFactory.shared.loadContainer(
-                from: downloader,
-                using: Gemma4TokenizerLoader(),
-                configuration: configuration
-            ) { progress in
-                guard !Task.isCancelled else { return }
-                let fraction = max(0.0, min(progress.fractionCompleted, 1.0))
-                let mapped = Self.initialDownloadProgress + fraction * 0.78
-                Task { @MainActor in
-                    guard self.recordModelLoadProgress(fraction: fraction, generation: loadGeneration) else {
-                        return
-                    }
-                    self.downloadProgress = max(self.downloadProgress, mapped)
-                    if case .downloading = self.modelState {
-                        self.host?.notifyCapabilitiesChanged()
+            let loadTask = Task<ModelContainer, Error> {
+                try await VLMModelFactory.shared.loadContainer(
+                    from: downloader,
+                    using: Gemma4TokenizerLoader(),
+                    configuration: configuration
+                ) { progress in
+                    guard !Task.isCancelled else { return }
+                    let fraction = max(0.0, min(progress.fractionCompleted, 1.0))
+                    let mapped = Self.initialDownloadProgress + fraction * 0.78
+                    Task { @MainActor in
+                        guard self.recordModelLoadProgress(fraction: fraction, generation: loadGeneration) else {
+                            return
+                        }
+                        self.downloadProgress = max(self.downloadProgress, mapped)
+                        if case .downloading = self.modelState {
+                            self.host?.notifyCapabilitiesChanged()
+                        }
                     }
                 }
             }
+            activeModelLoadTask = (generation: loadGeneration, task: loadTask)
+            defer {
+                if activeModelLoadTask?.generation == loadGeneration {
+                    activeModelLoadTask = nil
+                }
+            }
+            let container = try await loadTask.value
 
             try Task.checkCancellation()
             guard isCurrentModelLoad(loadGeneration) else { return }
@@ -535,7 +545,10 @@ final class Gemma4Plugin: NSObject, LLMProviderPlugin, LLMTemperatureControllabl
             host?.setUserDefault(nil, forKey: "loadedModel")
             return
         }
-        guard allowDownloads || isModelDownloaded(modelDef) else { return }
+        guard allowDownloads || isModelDownloaded(modelDef) else {
+            host?.setUserDefault(nil, forKey: "loadedModel")
+            return
+        }
         try? await loadModel(modelDef)
     }
 
@@ -549,6 +562,8 @@ final class Gemma4Plugin: NSObject, LLMProviderPlugin, LLMTemperatureControllabl
 
     private func invalidateModelLoad() {
         modelLoadGeneration += 1
+        activeModelLoadTask?.task.cancel()
+        activeModelLoadTask = nil
     }
 
     private func isCurrentModelLoad(_ generation: Int) -> Bool {
@@ -570,7 +585,6 @@ final class Gemma4Plugin: NSObject, LLMProviderPlugin, LLMTemperatureControllabl
         let timeout = modelLoadTimeoutDuration
         Task { [weak self] in
             while true {
-                try? await Task.sleep(for: timeout)
                 guard let self,
                       self.isCurrentModelLoad(generation),
                       self.loadedModelId == nil else {
@@ -585,7 +599,10 @@ final class Gemma4Plugin: NSObject, LLMProviderPlugin, LLMTemperatureControllabl
                 }
 
                 let elapsed = self.lastModelLoadProgressInstant.duration(to: self.modelLoadClock.now)
-                guard elapsed >= timeout else { continue }
+                guard elapsed >= timeout else {
+                    try? await Task.sleep(for: timeout - elapsed)
+                    continue
+                }
 
                 self.invalidateModelLoad()
                 self.modelContainer = nil
@@ -662,6 +679,10 @@ final class Gemma4Plugin: NSObject, LLMProviderPlugin, LLMTemperatureControllabl
 
     func invalidateModelLoadForTesting() {
         invalidateModelLoad()
+    }
+
+    func isCurrentModelLoadForTesting(_ generation: Int) -> Bool {
+        isCurrentModelLoad(generation)
     }
     #endif
 
