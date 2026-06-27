@@ -695,6 +695,7 @@ final class Gemma4PluginModelPolicyTests: XCTestCase {
         plugin.setModelLoadTimeoutForTesting(.milliseconds(20))
         let generation = plugin.startModelLoadTimeoutForTesting(modelName: model.displayName)
         plugin.cancelModelLoad()
+        try await Task.sleep(for: .milliseconds(40))
 
         XCTAssertFalse(plugin.isCurrentModelLoadForTesting(generation))
         XCTAssertEqual(plugin.modelState, .notLoaded)
