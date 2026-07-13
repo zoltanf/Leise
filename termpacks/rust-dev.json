@@ -10,7 +10,7 @@
     },
     "icon": "gearshape.2",
     "version": "1.0.0",
-    "author": "TypeWhisper",
+    "author": "Leise",
     "terms": [
         "Rust", "Cargo", "Tokio", "Serde", "Axum", "Actix",
         "Hyper", "Warp", "Rocket", "Diesel",

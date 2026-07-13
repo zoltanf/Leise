@@ -9,11 +9,16 @@ DerivedData/
 *.ipa
 *.dSYM.zip
 *.dSYM
+*.profraw
 
 # SPM
 .build/
 .swiftpm/
 Package.resolved
+
+# Python tooling
+__pycache__/
+*.py[cod]
 
 # macOS
 .DS_Store

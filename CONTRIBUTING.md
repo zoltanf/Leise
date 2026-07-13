@@ -1,11 +1,11 @@
-# Contributing to TypeWhisper
+# Contributing to Leise
 
 Thanks for your interest in contributing!
 
 ## Getting Started
 
 1. Fork the repository and clone it
-2. Open `TypeWhisper.xcodeproj` in Xcode 16+
+2. Open `Leise.xcodeproj` in Xcode 16+
 3. SPM dependencies resolve automatically on first build
 4. Build and run (Cmd+R) - the app appears as a menu bar icon
 
@@ -23,7 +23,7 @@ echo 'DEVELOPMENT_TEAM = YOUR_TEAM_ID' > CodeSigning.local.xcconfig
 - **Product runtime support:** macOS 14.0+
 - **Contributor machine:** macOS 15.0+ recommended for the current Xcode toolchain
 - **Swift 6** with strict concurrency
-- Debug builds use a separate data directory (`TypeWhisper-Dev`) and keychain prefix, so they don't interfere with release builds
+- Debug builds use a separate data directory (`Leise-Dev`) and keychain prefix, so they don't interfere with release builds
 
 ## Pull Requests
 
@@ -36,8 +36,8 @@ echo 'DEVELOPMENT_TEAM = YOUR_TEAM_ID' > CodeSigning.local.xcconfig
 Recommended checks:
 
 ```bash
-xcodebuild test -project TypeWhisper.xcodeproj -scheme TypeWhisper -destination 'platform=macOS,arch=arm64' -parallel-testing-enabled NO CODE_SIGN_IDENTITY='-' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
-swift test --package-path TypeWhisperPluginSDK
+xcodebuild test -project Leise.xcodeproj -scheme Leise -destination 'platform=macOS,arch=arm64' -parallel-testing-enabled NO CODE_SIGN_IDENTITY='-' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+swift test --package-path LeiseComponents
 ```
 
 ## Code Style
@@ -49,7 +49,7 @@ swift test --package-path TypeWhisperPluginSDK
 
 ## Reporting Issues
 
-Use the [issue templates](https://github.com/TypeWhisper/typewhisper-mac/issues/new/choose) for bug reports and feature requests.
+Use this repository's Issues tab for bug reports and feature requests.
 
 ## License
 

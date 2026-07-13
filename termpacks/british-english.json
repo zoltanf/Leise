@@ -10,7 +10,7 @@
     },
     "icon": "flag",
     "version": "1.0.0",
-    "author": "TypeWhisper",
+    "author": "Leise",
     "corrections": [
         {"original": "color", "replacement": "colour", "caseSensitive": false},
         {"original": "favor", "replacement": "favour", "caseSensitive": false},

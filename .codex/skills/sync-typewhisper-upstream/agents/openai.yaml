@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync TypeWhisper Upstream"
+  short_description: "Safely import upstream improvements into Leise"
+  default_prompt: "Use $sync-typewhisper-upstream to inspect and safely import selected improvements from TypeWhisper into Leise."
