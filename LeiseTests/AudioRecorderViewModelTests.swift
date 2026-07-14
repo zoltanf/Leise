@@ -98,6 +98,8 @@ final class AudioRecorderViewModelTests: XCTestCase {
         let customDirectory = makeTemporaryDirectory()
         defaults.set(customDirectory.path, forKey: UserDefaultsKeys.recorderOutputDirectory)
         let recorderService = AudioRecorderService()
+        let isolatedDefaultDirectory = makeTemporaryDirectory()
+        recorderService.recordingsDirectoryOverride = isolatedDefaultDirectory
         let viewModel = makeViewModel(
             defaults: defaults,
             engine: makeEngine(),
@@ -108,6 +110,7 @@ final class AudioRecorderViewModelTests: XCTestCase {
 
         XCTAssertNil(viewModel.selectedOutputDirectory)
         XCTAssertNil(defaults.string(forKey: UserDefaultsKeys.recorderOutputDirectory))
+        recorderService.recordingsDirectoryOverride = nil
         XCTAssertEqual(recorderService.recordingsDirectory, AudioRecorderService.defaultRecordingsDirectory)
     }
 
