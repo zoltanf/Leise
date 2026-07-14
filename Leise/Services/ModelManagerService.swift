@@ -87,7 +87,23 @@ final class ModelManagerService: ObservableObject {
     private var stateCancellable: AnyCancellable?
     private var autoUnloadTask: Task<Void, Never>?
     private var autoUnloadEntry: ModelAutoUnloadDiagnosticsSnapshot.Entry?
+    private var dictationPreparationTask: Task<Void, Error>?
+    private var dictationPreparationKey: DictationPreparationKey?
+    private var dictationPreparationOriginalModelID: String?
+    private var dictationPreparationOutcome: DictationPreparationOutcome?
+    private var dictationPreparationGeneration = UUID()
     private let providerKey = UserDefaultsKeys.selectedEngine
+
+    private struct DictationPreparationKey: Equatable {
+        let engineID: String
+        let modelID: String?
+    }
+
+    private enum DictationPreparationOutcome: Equatable {
+        case inFlight
+        case succeeded
+        case failed
+    }
 
     init(engine: (any TranscriptionEngine)? = nil) {
         self.engine = engine
@@ -149,19 +165,70 @@ final class ModelManagerService: ObservableObject {
 
     func selectProvider(_ providerId: String) {
         guard hasEngine(id: providerId) else { return }
+        if selectedProviderId != providerId {
+            cancelDictationPreparation()
+        }
         selectedProviderId = providerId
         UserDefaults.standard.set(providerId, forKey: providerKey)
     }
 
     func clearProviderSelection() {
+        cancelDictationPreparation()
         selectedProviderId = nil
         UserDefaults.standard.removeObject(forKey: providerKey)
     }
 
     func selectModel(_ providerId: String, modelId: String) {
         guard let engine = engine(for: providerId) else { return }
+        cancelDictationPreparation()
         selectProvider(providerId)
         engine.selectModel(id: modelId)
+    }
+
+    /// Loads an already-downloaded model while the user is speaking. The normal
+    /// transcription path awaits this same task, avoiding duplicate model loads
+    /// when a recording is stopped quickly. A hotkey press never starts a download.
+    func prepareForDictation(
+        engineOverrideId: String? = nil,
+        modelOverrideId: String? = nil
+    ) {
+        guard autoUnloadSeconds != -1 else { return }
+        guard let engine = engine(for: engineOverrideId ?? selectedProviderId) else { return }
+
+        let modelID = modelOverrideId ?? engine.selectedModelID
+        let key = DictationPreparationKey(engineID: engine.id, modelID: modelID)
+        guard !engine.isReady || engine.selectedModelID != modelID else { return }
+        guard dictationPreparationKey != key || dictationPreparationTask == nil else { return }
+
+        cancelDictationPreparation()
+        let generation = UUID()
+        dictationPreparationGeneration = generation
+        dictationPreparationKey = key
+        dictationPreparationOriginalModelID = engine.selectedModelID
+        dictationPreparationOutcome = .inFlight
+        let task = Task { @MainActor in
+            try await engine.prepareModel(id: modelID, allowDownloads: false)
+        }
+        dictationPreparationTask = task
+
+        Task { @MainActor [weak self] in
+            let result = await task.result
+            guard let self, self.dictationPreparationGeneration == generation else { return }
+            self.dictationPreparationTask = nil
+            self.dictationPreparationOutcome = switch result {
+            case .success: .succeeded
+            case .failure: .failed
+            }
+        }
+    }
+
+    private func cancelDictationPreparation() {
+        dictationPreparationTask?.cancel()
+        dictationPreparationTask = nil
+        dictationPreparationKey = nil
+        dictationPreparationOriginalModelID = nil
+        dictationPreparationOutcome = nil
+        dictationPreparationGeneration = UUID()
     }
 
     func restoreProviderSelection() {
@@ -294,21 +361,40 @@ final class ModelManagerService: ObservableObject {
             throw TranscriptionEngineError.modelNotLoaded
         }
 
-        let previousModelID = engine.selectedModelID
-        let requestedModelID = cloudModelOverride ?? previousModelID
-        if requestedModelID != previousModelID, let requestedModelID {
+        let observedModelID = engine.selectedModelID
+        let requestedModelID = cloudModelOverride ?? observedModelID
+        let preparationKey = DictationPreparationKey(
+            engineID: engine.id,
+            modelID: requestedModelID
+        )
+        let hasMatchingWarmup = dictationPreparationKey == preparationKey
+        let modelIDToRestore = hasMatchingWarmup
+            ? dictationPreparationOriginalModelID
+            : observedModelID
+        let requiresModelSwitch = requestedModelID != observedModelID
+        if requiresModelSwitch, !hasMatchingWarmup, let requestedModelID {
             engine.selectModel(id: requestedModelID)
         }
         defer {
-            if let previousModelID, previousModelID != requestedModelID {
-                engine.selectModel(id: previousModelID)
+            if let modelIDToRestore, modelIDToRestore != requestedModelID {
+                engine.selectModel(id: modelIDToRestore)
             }
         }
 
         do {
             let preparationToken = PerformanceMilestones.begin(.modelPreparation)
-            try await engine.prepareModel(id: requestedModelID, allowDownloads: true)
-            PerformanceMilestones.end(preparationToken)
+            defer { PerformanceMilestones.end(preparationToken) }
+            var warmupPreparedModel = false
+            if hasMatchingWarmup, let dictationPreparationTask {
+                if case .success = await dictationPreparationTask.result {
+                    warmupPreparedModel = engine.isReady && engine.selectedModelID == requestedModelID
+                }
+            } else if hasMatchingWarmup, dictationPreparationOutcome == .succeeded {
+                warmupPreparedModel = engine.isReady && engine.selectedModelID == requestedModelID
+            }
+            if !warmupPreparedModel && (!engine.isReady || requiresModelSwitch) {
+                try await engine.prepareModel(id: requestedModelID, allowDownloads: true)
+            }
         } catch {
             throw TranscriptionEngineError.modelLoadFailed(error.localizedDescription)
         }

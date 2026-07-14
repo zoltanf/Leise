@@ -24,6 +24,11 @@ bash -n \
   "$repo_root/scripts/build-dev-local.sh" \
   "$repo_root/scripts/test-dev-build.sh"
 
+grep -Fq -- '--reset-permissions' "$repo_root/scripts/build-and-run.sh" \
+  || fail "build-and-run script is missing the full permission-reset option"
+grep -Fq 'tccutil reset All "$bundle_identifier"' "$repo_root/scripts/build-and-run.sh" \
+  || fail "build-and-run script must reset every privacy grant for the installed app identity"
+
 [[ -d "$app_path" ]] || fail "app not found at $app_path"
 
 info_plist="$app_path/Contents/Info.plist"

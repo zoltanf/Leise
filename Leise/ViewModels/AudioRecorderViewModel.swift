@@ -107,6 +107,7 @@ final class AudioRecorderViewModel: ObservableObject {
     @Published var outputFormat: AudioRecorderService.OutputFormat {
         didSet { defaults.set(outputFormat.rawValue, forKey: UserDefaultsKeys.recorderOutputFormat) }
     }
+    @Published private(set) var selectedOutputDirectory: URL?
     @Published var micDuckingMode: AudioRecorderService.MicDuckingMode {
         didSet {
             defaults.set(micDuckingMode.rawValue, forKey: UserDefaultsKeys.recorderMicDuckingMode)
@@ -172,6 +173,10 @@ final class AudioRecorderViewModel: ObservableObject {
         resolvedEngine?.capabilities.supportedLanguages.sorted() ?? []
     }
     var selectedLanguage: String? { languageSelection.requestedLanguage }
+    var outputDirectory: URL { recorderService.recordingsDirectory }
+    var outputDirectoryDisplayPath: String {
+        (outputDirectory.path as NSString).abbreviatingWithTildeInPath
+    }
     var canToggleRecording: Bool {
         Self.canToggleRecording(
             state: state,
@@ -227,6 +232,15 @@ final class AudioRecorderViewModel: ObservableObject {
             self.outputFormat = .wav
         }
 
+        if let savedPath = defaults.string(forKey: UserDefaultsKeys.recorderOutputDirectory),
+           !savedPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let directory = URL(fileURLWithPath: savedPath, isDirectory: true).standardizedFileURL
+            self.selectedOutputDirectory = directory
+            recorderService.selectedRecordingsDirectory = directory
+        } else {
+            self.selectedOutputDirectory = nil
+        }
+
         if let modeString = defaults.string(forKey: UserDefaultsKeys.recorderMicDuckingMode),
            let mode = AudioRecorderService.MicDuckingMode(rawValue: modeString) {
             self.micDuckingMode = mode
@@ -258,7 +272,6 @@ final class AudioRecorderViewModel: ObservableObject {
         recorderService.trackMode = trackMode
 
         setupBindings()
-        loadRecordings()
 
         streamingHandler.onPartialTextUpdate = { [weak self] text in
             guard let self else { return }
@@ -517,6 +530,21 @@ final class AudioRecorderViewModel: ObservableObject {
         }
     }
 
+    func setOutputDirectory(_ directory: URL) {
+        let normalizedDirectory = directory.standardizedFileURL
+        selectedOutputDirectory = normalizedDirectory
+        recorderService.selectedRecordingsDirectory = normalizedDirectory
+        defaults.set(normalizedDirectory.path, forKey: UserDefaultsKeys.recorderOutputDirectory)
+        loadRecordings()
+    }
+
+    func useDefaultOutputDirectory() {
+        selectedOutputDirectory = nil
+        recorderService.selectedRecordingsDirectory = nil
+        defaults.removeObject(forKey: UserDefaultsKeys.recorderOutputDirectory)
+        loadRecordings()
+    }
+
     func copyTranscript(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
@@ -667,7 +695,7 @@ final class AudioRecorderViewModel: ObservableObject {
                     request: request
                 )
                 let recordedFailure = saveTranscriptionFailure(failure, for: request.outputURL)
-                errorMessage = recorderTranscriptionFailureSummary(recordedFailure)
+                errorMessage = recorderTranscriptionFailureAlertSummary(recordedFailure)
                 return .failed(recordedFailure)
             }
         } catch {
@@ -682,7 +710,7 @@ final class AudioRecorderViewModel: ObservableObject {
                 request: request
             )
             let recordedFailure = saveTranscriptionFailure(failure, for: request.outputURL)
-            errorMessage = recorderTranscriptionFailureSummary(recordedFailure)
+            errorMessage = recorderTranscriptionFailureAlertSummary(recordedFailure)
             return .failed(recordedFailure)
         }
     }
@@ -720,7 +748,7 @@ final class AudioRecorderViewModel: ObservableObject {
                 request: request
             )
             let recordedFailure = saveTranscriptionFailure(failure, for: audioURL)
-            errorMessage = recorderTranscriptionFailureSummary(recordedFailure)
+            errorMessage = recorderTranscriptionFailureAlertSummary(recordedFailure)
             return .failed(recordedFailure)
         }
     }
@@ -791,9 +819,9 @@ final class AudioRecorderViewModel: ObservableObject {
         try? FileManager.default.removeItem(at: transcriptionFailureURL(for: audioURL))
     }
 
-    private func recorderTranscriptionFailureSummary(_ failure: RecordingTranscriptionFailure) -> String {
+    func recorderTranscriptionFailureAlertSummary(_ failure: RecordingTranscriptionFailure) -> String {
         String(
-            format: String(localized: "recorder.transcriptionFailureSummary"),
+            format: String(localized: "recorder.transcriptionFailureAlertSummary"),
             failure.phase.displayName,
             failure.providerError
         )

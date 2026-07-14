@@ -13,10 +13,16 @@ no-ops. Current names are:
 - `process_to_ui_ready`, `app_initialization`;
 - `service_container_construction`, `service_container_initialization`;
 - `hotkey_registration`, `hotkey_ready`, `ui_ready`;
-- `built_in_component_construction`, `retained_store_opening`;
+- `built_in_component_construction`, `audio_device_discovery`,
+  `launch_view_model_construction`, `retained_store_opening`;
 - `model_selection_restoration`, `model_preparation`;
 - `audio_start`, `live_session_creation`, `final_transcription`;
 - `post_processing`, `history_statistics_persistence`, `text_insertion`.
+
+Interactive dictation captures also emit `dictation_requested`,
+`first_recording_audio_buffer`, and `first_transcript_preview`. The signpost
+normalizer derives `dictation_request_to_first_audio_buffer` and
+`dictation_request_to_first_transcript_preview` interval rows from them.
 
 ## Environment and builds
 

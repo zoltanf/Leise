@@ -5,7 +5,8 @@ import LeiseCore
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "leise-mac", category: "StreamingHandler")
 
 final class StreamingHandler: @unchecked Sendable {
-    private static let fallbackPollInterval: Duration = .seconds(3)
+    private static let defaultInitialFallbackDelay: Duration = .milliseconds(1_250)
+    private static let defaultFallbackPollInterval: Duration = .seconds(3)
     private static let fallbackPreviewWindowDuration: TimeInterval = 10
     private static let livePreviewSampleRate: Double = 16_000
     private static let livePreviewAnalysisFrameDuration: TimeInterval = 0.1
@@ -23,16 +24,22 @@ final class StreamingHandler: @unchecked Sendable {
 
     private let modelManager: ModelManagerService
     private let recentBufferProvider: (TimeInterval) -> [Float]
+    private let initialFallbackDelay: Duration
+    private let fallbackPollInterval: Duration
 
     var onPartialTextUpdate: ((String) -> Void)?
     var onStreamingStateChange: ((Bool) -> Void)?
 
     init(
         modelManager: ModelManagerService,
-        recentBufferProvider: @escaping (TimeInterval) -> [Float]
+        recentBufferProvider: @escaping (TimeInterval) -> [Float],
+        initialFallbackDelay: Duration = StreamingHandler.defaultInitialFallbackDelay,
+        fallbackPollInterval: Duration = StreamingHandler.defaultFallbackPollInterval
     ) {
         self.modelManager = modelManager
         self.recentBufferProvider = recentBufferProvider
+        self.initialFallbackDelay = initialFallbackDelay
+        self.fallbackPollInterval = fallbackPollInterval
     }
 
     @MainActor
@@ -118,7 +125,7 @@ final class StreamingHandler: @unchecked Sendable {
         normalizeNumbers: Bool?,
         stateCheck: @escaping @MainActor @Sendable () -> Bool
     ) async {
-        try? await Task.sleep(for: Self.fallbackPollInterval)
+        try? await Task.sleep(for: initialFallbackDelay)
 
         while !Task.isCancelled {
             guard await stateCheck() else { break }
@@ -149,7 +156,7 @@ final class StreamingHandler: @unchecked Sendable {
                 }
             }
 
-            try? await Task.sleep(for: Self.fallbackPollInterval)
+            try? await Task.sleep(for: fallbackPollInterval)
         }
     }
 

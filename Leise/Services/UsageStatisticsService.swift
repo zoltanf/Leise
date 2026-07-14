@@ -295,16 +295,43 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
         }
     }
 
-    #if DEBUG
-    func replaceWithHistoryRecords(_ records: [TranscriptionRecord]) {
+    func rebuildFromHistory(_ records: [TranscriptionRecord]) throws {
         do {
             for day in try modelContext.fetch(FetchDescriptor<UsageStatisticsDay>()) {
                 modelContext.delete(day)
             }
-            try setHistoryBackfillCompleted(false)
-            save()
+
+            for record in records {
+                let wordsCount = record.wordsCount > 0
+                    ? record.wordsCount
+                    : record.finalText.split(separator: " ").count
+                guard wordsCount > 0,
+                      record.durationSeconds.isFinite,
+                      record.durationSeconds >= 0 else {
+                    continue
+                }
+                try upsertDay(
+                    timestamp: record.timestamp,
+                    wordsCount: wordsCount,
+                    durationSeconds: record.durationSeconds,
+                    appBundleIdentifier: record.appBundleIdentifier
+                )
+            }
+
+            try setHistoryBackfillCompleted(true)
+            try modelContext.save()
             fetchDays()
-            backfillFromHistoryIfNeeded(records)
+        } catch {
+            modelContext.rollback()
+            fetchDays()
+            throw error
+        }
+    }
+
+    #if DEBUG
+    func replaceWithHistoryRecords(_ records: [TranscriptionRecord]) {
+        do {
+            try rebuildFromHistory(records)
         } catch {
             usageStatisticsLogger.error("Failed to rebuild usage statistics: \(error.localizedDescription)")
         }

@@ -455,7 +455,9 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
     @Published private(set) var micLevel: Float = 0
     @Published private(set) var systemLevel: Float = 0
     @Published private(set) var systemAudioWarningMessage: String?
+    /// Test-only precedence over both the selected and default output directories.
     var recordingsDirectoryOverride: URL?
+    var selectedRecordingsDirectory: URL?
     var startRecordingOverride: ((
         _ micEnabled: Bool,
         _ systemAudioEnabled: Bool,
@@ -504,6 +506,11 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
 
     static let recordingsDirectoryName = "Leise Recordings"
 
+    static var defaultRecordingsDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(recordingsDirectoryName, isDirectory: true)
+    }
+
     init(
         inputActivationGuard: AudioInputDeviceActivating = AudioInputDeviceActivationGuard(),
         bluetoothInputRouteStabilizer: BluetoothInputRouteStabilizing = CoreAudioBluetoothInputRouteStabilizer(),
@@ -518,8 +525,7 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
         if let recordingsDirectoryOverride {
             return recordingsDirectoryOverride
         }
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(Self.recordingsDirectoryName)
+        return selectedRecordingsDirectory ?? Self.defaultRecordingsDirectory
     }
 
     // MARK: - Transcription Buffer Access

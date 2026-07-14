@@ -588,6 +588,136 @@ final class DictionaryServiceTests: XCTestCase {
     }
 }
 
+final class UserDataBackupServiceTests: XCTestCase {
+    @MainActor
+    func testExportAndImportRoundTripsPreferencesDictionaryProfilesAndHistory() throws {
+        let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
+        defer { TestSupport.remove(appSupportDirectory) }
+
+        let suiteName = "UserDataBackupServiceTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let history = HistoryService(appSupportDirectory: appSupportDirectory)
+        let dictionary = DictionaryService(appSupportDirectory: appSupportDirectory)
+        let profiles = ProfileService(appSupportDirectory: appSupportDirectory)
+        let usage = UsageStatisticsService(appSupportDirectory: appSupportDirectory)
+        let service = UserDataBackupService(
+            defaults: defaults,
+            defaultsDomain: suiteName,
+            historyService: history,
+            dictionaryService: dictionary,
+            profileService: profiles,
+            usageStatisticsService: usage
+        )
+
+        defaults.set(true, forKey: "boolSetting")
+        defaults.set(42, forKey: "integerSetting")
+        defaults.set(2.5, forKey: "doubleSetting")
+        defaults.set("parakeet", forKey: "stringSetting")
+        defaults.set(Data([0x01, 0x02, 0x03]), forKey: "dataSetting")
+        defaults.set(["one", "two"], forKey: "arraySetting")
+        defaults.set(["enabled": true], forKey: "dictionarySetting")
+
+        dictionary.addEntry(
+            type: .correction,
+            original: "teh",
+            replacement: "the",
+            caseSensitive: true,
+            source: .autoLearned
+        )
+        profiles.addProfile(
+            name: "Writing",
+            bundleIdentifiers: ["com.apple.TextEdit"],
+            inputLanguage: "en",
+            autoEnterEnabled: true,
+            priority: 7
+        )
+        history.addRecord(
+            rawText: "test one",
+            finalText: "Test one.",
+            appName: "TextEdit",
+            appBundleIdentifier: "com.apple.TextEdit",
+            durationSeconds: 1.25,
+            language: "en",
+            engineUsed: "parakeet",
+            modelUsed: "tdt-v3",
+            pipelineSteps: ["punctuation"]
+        )
+
+        let originalDictionaryID = try XCTUnwrap(dictionary.entries.first?.id)
+        let originalProfileID = try XCTUnwrap(profiles.profiles.first?.id)
+        let originalHistoryID = try XCTUnwrap(history.records.first?.id)
+        let backupURL = appSupportDirectory.appendingPathComponent("backup.json")
+
+        let exported = try service.exportBackup(to: backupURL)
+        XCTAssertEqual(exported.dictionaryEntryCount, 1)
+        XCTAssertEqual(exported.profileCount, 1)
+        XCTAssertEqual(exported.historyRecordCount, 1)
+
+        defaults.set(false, forKey: "boolSetting")
+        defaults.set("temporary", forKey: "temporarySetting")
+        dictionary.addEntry(type: .term, original: "Temporary")
+        profiles.addProfile(name: "Temporary")
+        history.addRecord(
+            rawText: "temporary",
+            finalText: "Temporary.",
+            appName: nil,
+            appBundleIdentifier: nil,
+            durationSeconds: 0.5,
+            language: nil,
+            engineUsed: "test"
+        )
+
+        let imported = try service.importBackup(from: backupURL)
+
+        XCTAssertEqual(imported, exported)
+        XCTAssertEqual(defaults.bool(forKey: "boolSetting"), true)
+        XCTAssertEqual(defaults.integer(forKey: "integerSetting"), 42)
+        XCTAssertEqual(defaults.double(forKey: "doubleSetting"), 2.5)
+        XCTAssertEqual(defaults.string(forKey: "stringSetting"), "parakeet")
+        XCTAssertEqual(defaults.data(forKey: "dataSetting"), Data([0x01, 0x02, 0x03]))
+        XCTAssertNil(defaults.object(forKey: "temporarySetting"))
+
+        XCTAssertEqual(dictionary.entries.count, 1)
+        XCTAssertEqual(dictionary.entries.first?.id, originalDictionaryID)
+        XCTAssertEqual(dictionary.entries.first?.source, .autoLearned)
+        XCTAssertEqual(profiles.profiles.count, 1)
+        XCTAssertEqual(profiles.profiles.first?.id, originalProfileID)
+        XCTAssertEqual(profiles.profiles.first?.priority, 7)
+        XCTAssertEqual(history.records.count, 1)
+        XCTAssertEqual(history.records.first?.id, originalHistoryID)
+        XCTAssertEqual(history.records.first?.pipelineStepList, ["punctuation"])
+
+        let statistics = usage.summary(from: nil)
+        XCTAssertEqual(statistics.transcriptionCount, 1)
+        XCTAssertEqual(statistics.words, history.records.first?.wordsCount)
+    }
+
+    @MainActor
+    func testInspectRejectsNonLeiseJSONBeforeMutatingData() throws {
+        let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
+        defer { TestSupport.remove(appSupportDirectory) }
+
+        let suiteName = "UserDataBackupServiceTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let service = UserDataBackupService(
+            defaults: defaults,
+            defaultsDomain: suiteName,
+            historyService: HistoryService(appSupportDirectory: appSupportDirectory),
+            dictionaryService: DictionaryService(appSupportDirectory: appSupportDirectory),
+            profileService: ProfileService(appSupportDirectory: appSupportDirectory),
+            usageStatisticsService: UsageStatisticsService(appSupportDirectory: appSupportDirectory)
+        )
+        let url = appSupportDirectory.appendingPathComponent("not-a-backup.json")
+        try Data("{\"format\":\"something-else\"}".utf8).write(to: url)
+
+        XCTAssertThrowsError(try service.inspectBackup(at: url))
+    }
+}
+
 final class TermPackRegistryServiceTests: XCTestCase {
     @MainActor
     func testBackgroundCheckDoesNotRecordTimestampWhenFetchFails() async {

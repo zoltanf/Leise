@@ -26,6 +26,9 @@ struct HomeSettingsView: View {
                     .fontWeight(.semibold)
                 Spacer()
                 timePeriodPicker
+                #if DEBUG
+                dashboardActionsMenu
+                #endif
             }
             .padding(.horizontal)
             .padding(.top)
@@ -46,27 +49,6 @@ struct HomeSettingsView: View {
                     // Row 3: Recent transcriptions
                     recentTranscriptionsSection
 
-                    #if DEBUG
-                    HStack(spacing: 8) {
-                        Spacer()
-                        Button("Seed Demo Data") {
-                            let historyService = ServiceContainer.shared.historyService
-                            historyService.seedDemoData()
-                            ServiceContainer.shared.usageStatisticsService.replaceWithHistoryRecords(historyService.records)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.orange)
-                        .font(.caption)
-                        Button("Clear All Data") {
-                            let historyService = ServiceContainer.shared.historyService
-                            historyService.clearAll()
-                            ServiceContainer.shared.usageStatisticsService.clearUsageStatistics()
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.red)
-                        .font(.caption)
-                    }
-                    #endif
                 }
                 .padding(.horizontal)
                 .padding(.bottom)
@@ -75,6 +57,49 @@ struct HomeSettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .frame(minWidth: 500, minHeight: 400)
     }
+
+    // MARK: - Dashboard Actions
+
+    #if DEBUG
+    @State private var showClearAllDataConfirmation = false
+
+    private var dashboardActionsMenu: some View {
+        Menu {
+            Button("Seed Demo Data", action: seedDemoData)
+
+            Divider()
+
+            Button("Clear All Data", role: .destructive) {
+                showClearAllDataConfirmation = true
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .accessibilityLabel("Dashboard Actions")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Dashboard Actions")
+        .confirmationDialog(
+            "Clear All Data?",
+            isPresented: $showClearAllDataConfirmation
+        ) {
+            Button("Clear All Data", role: .destructive, action: clearAllData)
+        } message: {
+            Text("This will permanently delete all transcription history and usage statistics.")
+        }
+    }
+
+    private func seedDemoData() {
+        let historyService = ServiceContainer.shared.historyService
+        historyService.seedDemoData()
+        ServiceContainer.shared.usageStatisticsService.replaceWithHistoryRecords(historyService.records)
+    }
+
+    private func clearAllData() {
+        ServiceContainer.shared.historyService.clearAll()
+        ServiceContainer.shared.usageStatisticsService.clearUsageStatistics()
+    }
+    #endif
 
     // MARK: - Time Period Picker
 

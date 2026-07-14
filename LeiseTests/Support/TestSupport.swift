@@ -165,6 +165,7 @@ final class TestTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
     private(set) var requests: [TranscriptionRequest] = []
     private(set) var selectedModelHistory: [String] = []
     private(set) var prepareCallCount = 0
+    private(set) var prepareAllowDownloadsHistory: [Bool] = []
     private(set) var unloadCallCount = 0
 
     init(
@@ -198,8 +199,9 @@ final class TestTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
         stateSubject.send()
     }
 
-    func prepareModel(id: String?, allowDownloads _: Bool) async throws {
+    func prepareModel(id: String?, allowDownloads: Bool) async throws {
         prepareCallCount += 1
+        prepareAllowDownloadsHistory.append(allowDownloads)
         if let id { selectModel(id: id) }
         isReady = true
         stateSubject.send()

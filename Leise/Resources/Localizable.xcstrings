@@ -12969,6 +12969,72 @@
         }
       }
     },
+    "recorder.outputFolder": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausgabeordner"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output Folder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出力フォルダ"
+          }
+        }
+      }
+    },
+    "recorder.outputFolder.description": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Aufnahmen und ihre Transkripte werden in diesem Ordner gespeichert."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New recordings and their transcripts are saved in this folder."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい録音とその文字起こしはこのフォルダに保存されます。"
+          }
+        }
+      }
+    },
+    "recorder.outputFolder.pickerMessage": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle aus, wo Leise neue Aufnahmen und Transkripte speichert."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose where Leise saves new recordings and transcripts."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leiseが新しい録音と文字起こしを保存する場所を選択します。"
+          }
+        }
+      }
+    },
     "recorder.recordings": {
       "localizations": {
         "de": {
@@ -12987,6 +13053,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "録音"
+          }
+        }
+      }
+    },
+    "recorder.useDefaultOutputFolder": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standardordner verwenden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Default Folder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトフォルダを使用"
           }
         }
       }
@@ -13317,6 +13405,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "文字起こしに失敗しました"
+          }
+        }
+      }
+    },
+    "recorder.transcriptionFailureAlertSummary": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkription fehlgeschlagen waehrend %@: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription failed during %@: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@中に文字起こしに失敗しました: %@"
           }
         }
       }

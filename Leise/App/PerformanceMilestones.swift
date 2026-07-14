@@ -17,6 +17,8 @@ enum PerformanceMilestones {
         case serviceContainerInitialization
         case hotkeyRegistration
         case builtInComponentConstruction
+        case audioDeviceDiscovery
+        case launchViewModelConstruction
         case retainedStoreOpening
         case modelSelectionRestoration
         case audioStart
@@ -74,6 +76,24 @@ enum PerformanceMilestones {
         #endif
     }
 
+    static func dictationRequested() {
+        #if DEBUG
+        signposter.emitEvent("dictation_requested")
+        #endif
+    }
+
+    static func firstRecordingAudioBuffer() {
+        #if DEBUG
+        signposter.emitEvent("first_recording_audio_buffer")
+        #endif
+    }
+
+    static func firstTranscriptPreview() {
+        #if DEBUG
+        signposter.emitEvent("first_transcript_preview")
+        #endif
+    }
+
     static func begin(_ interval: Interval) -> Token {
         #if DEBUG
         let state: OSSignpostIntervalState
@@ -88,6 +108,10 @@ enum PerformanceMilestones {
             state = signposter.beginInterval("hotkey_registration")
         case .builtInComponentConstruction:
             state = signposter.beginInterval("built_in_component_construction")
+        case .audioDeviceDiscovery:
+            state = signposter.beginInterval("audio_device_discovery")
+        case .launchViewModelConstruction:
+            state = signposter.beginInterval("launch_view_model_construction")
         case .retainedStoreOpening:
             state = signposter.beginInterval("retained_store_opening")
         case .modelSelectionRestoration:
@@ -126,6 +150,10 @@ enum PerformanceMilestones {
             signposter.endInterval("hotkey_registration", token.state)
         case .builtInComponentConstruction:
             signposter.endInterval("built_in_component_construction", token.state)
+        case .audioDeviceDiscovery:
+            signposter.endInterval("audio_device_discovery", token.state)
+        case .launchViewModelConstruction:
+            signposter.endInterval("launch_view_model_construction", token.state)
         case .retainedStoreOpening:
             signposter.endInterval("retained_store_opening", token.state)
         case .modelSelectionRestoration:

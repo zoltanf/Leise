@@ -63,6 +63,89 @@ final class StreamingHandlerTests: XCTestCase {
         XCTAssertEqual(states, [false, true, false])
     }
 
+    func testInitialFallbackCanPublishBeforeRegularPollInterval() async {
+        let engine = TestTranscriptionEngine()
+        let handler = StreamingHandler(
+            modelManager: ModelManagerService(engine: engine),
+            recentBufferProvider: { _ in Array(repeating: 0.1, count: 16_000) },
+            initialFallbackDelay: .milliseconds(10),
+            fallbackPollInterval: .seconds(10)
+        )
+        let preview = expectation(description: "initial preview")
+        handler.onPartialTextUpdate = { text in
+            if text == "mock transcription" {
+                preview.fulfill()
+            }
+        }
+
+        handler.start(
+            streamPrompt: "",
+            engineOverrideId: "parakeet",
+            selectedProviderId: "parakeet",
+            languageSelection: .auto,
+            task: .transcribe,
+            cloudModelOverride: nil,
+            allowLiveTranscription: true,
+            stateCheck: { true }
+        )
+
+        await fulfillment(of: [preview], timeout: 1)
+        handler.stop()
+        XCTAssertEqual(engine.requests.count, 1)
+    }
+
+    func testDictationWarmupUsesDownloadedModelAndAvoidsSecondPreparation() async throws {
+        let engine = TestTranscriptionEngine(isReady: false)
+        let modelManager = ModelManagerService(engine: engine)
+
+        modelManager.prepareForDictation()
+        for _ in 0..<20 where !engine.isReady {
+            await Task.yield()
+        }
+
+        XCTAssertTrue(engine.isReady)
+        XCTAssertEqual(engine.prepareCallCount, 1)
+        XCTAssertEqual(engine.prepareAllowDownloadsHistory, [false])
+
+        _ = try await modelManager.transcribe(
+            audioSamples: Array(repeating: 0.1, count: 16_000),
+            languageSelection: .auto,
+            task: .transcribe
+        )
+
+        XCTAssertEqual(engine.prepareCallCount, 1)
+        XCTAssertEqual(engine.requests.count, 1)
+    }
+
+    func testOverrideWarmupRestoresPreviouslySelectedModelAfterTranscription() async throws {
+        let originalModelID = "parakeet-tdt-0.6b-v3"
+        let overrideModelID = "parakeet-tdt-0.6b-v2"
+        let engine = TestTranscriptionEngine(
+            models: [
+                TranscriptionModel(id: originalModelID, displayName: "Parakeet TDT v3"),
+                TranscriptionModel(id: overrideModelID, displayName: "Parakeet TDT v2")
+            ],
+            selectedModelID: originalModelID
+        )
+        let modelManager = ModelManagerService(engine: engine)
+
+        modelManager.prepareForDictation(modelOverrideId: overrideModelID)
+        for _ in 0..<20 where engine.prepareCallCount == 0 {
+            await Task.yield()
+        }
+        XCTAssertEqual(engine.selectedModelID, overrideModelID)
+
+        _ = try await modelManager.transcribe(
+            audioSamples: Array(repeating: 0.1, count: 16_000),
+            languageSelection: .auto,
+            task: .transcribe,
+            cloudModelOverride: overrideModelID
+        )
+
+        XCTAssertEqual(engine.prepareCallCount, 1)
+        XCTAssertEqual(engine.selectedModelID, originalModelID)
+    }
+
     func testStabilizeTextAppendsDisjointPreviewWindows() {
         XCTAssertEqual(
             StreamingHandler.stabilizeText(confirmed: "First sentence.", new: "Second sentence."),

@@ -143,6 +143,41 @@ final class HistoryService: ObservableObject {
         }
     }
 
+    /// Replaces database metadata without deleting audio files. A backup contains
+    /// audio filenames, not the potentially very large audio payloads themselves.
+    func replaceAll(with snapshots: [BackupHistoryRecord]) throws {
+        do {
+            for record in try modelContext.fetch(FetchDescriptor<TranscriptionRecord>()) {
+                modelContext.delete(record)
+            }
+            for snapshot in snapshots {
+                let record = TranscriptionRecord(
+                    id: snapshot.id,
+                    timestamp: snapshot.timestamp,
+                    rawText: snapshot.rawText,
+                    finalText: snapshot.finalText,
+                    appName: snapshot.appName,
+                    appBundleIdentifier: snapshot.appBundleIdentifier,
+                    appURL: snapshot.appURL,
+                    durationSeconds: snapshot.durationSeconds,
+                    language: snapshot.language,
+                    engineUsed: snapshot.engineUsed,
+                    modelUsed: snapshot.modelUsed,
+                    audioFileName: snapshot.audioFileName
+                )
+                record.wordsCount = snapshot.wordsCount
+                record.pipelineStepList = snapshot.pipelineSteps
+                modelContext.insert(record)
+            }
+            try modelContext.save()
+            fetchRecords()
+        } catch {
+            modelContext.rollback()
+            fetchRecords()
+            throw error
+        }
+    }
+
     func searchRecords(query: String) -> [TranscriptionRecord] {
         guard !query.isEmpty else { return records }
         let lowered = query.lowercased()

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import LeiseCore
 
@@ -124,6 +125,38 @@ struct AudioRecorderView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
+
+                LabeledContent(String(localized: "recorder.outputFolder")) {
+                    HStack(spacing: 8) {
+                        Text(viewModel.outputDirectoryDisplayPath)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: 320, alignment: .trailing)
+                            .help(viewModel.outputDirectory.path)
+
+                        Button {
+                            chooseOutputFolder()
+                        } label: {
+                            Label(String(localized: "Choose Folder"), systemImage: "folder")
+                        }
+
+                        if viewModel.selectedOutputDirectory != nil {
+                            Button {
+                                viewModel.useDefaultOutputDirectory()
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                            }
+                            .help(String(localized: "recorder.useDefaultOutputFolder"))
+                            .accessibilityLabel(String(localized: "recorder.useDefaultOutputFolder"))
+                        }
+                    }
+                }
+                .disabled(isEditingLocked)
+
+                Text(String(localized: "recorder.outputFolder.description"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Picker(String(localized: "recorder.format"), selection: $viewModel.outputFormat) {
                     Text("WAV").tag(AudioRecorderService.OutputFormat.wav)
@@ -253,6 +286,7 @@ struct AudioRecorderView: View {
             .onAppear {
                 modelManager.restoreProviderSelection()
                 viewModel.reconcileSelectionWithAvailableEngines()
+                viewModel.loadRecordings()
             }
 
             // Recordings list
@@ -297,6 +331,30 @@ struct AudioRecorderView: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+        }
+    }
+
+    private func chooseOutputFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = String(localized: "Choose Folder")
+        panel.message = String(localized: "recorder.outputFolder.pickerMessage")
+
+        let currentDirectory = viewModel.outputDirectory
+        if FileManager.default.fileExists(atPath: currentDirectory.path) {
+            panel.directoryURL = currentDirectory
+        } else {
+            panel.directoryURL = currentDirectory.deletingLastPathComponent()
+        }
+
+        panel.begin { response in
+            guard response == .OK, let directory = panel.url else { return }
+            Task { @MainActor in
+                viewModel.setOutputDirectory(directory)
+            }
         }
     }
 }

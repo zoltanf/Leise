@@ -33,6 +33,9 @@ final class BuiltInComponents: ObservableObject {
     let fillerCleanupSettingsView: AnyView
 
     init() {
+        let performanceToken = PerformanceMilestones.begin(.builtInComponentConstruction)
+        defer { PerformanceMilestones.end(performanceToken) }
+
         let parakeet = ParakeetComponentFactory.make(
             store: ComponentSettingsStore(namespace: "parakeet")
         )
@@ -78,6 +81,7 @@ final class ServiceContainer: ObservableObject {
     let audioRecorderService: AudioRecorderService
     let accessibilityAnnouncementService: AccessibilityAnnouncementService
     let errorLogService: ErrorLogService
+    let userDataBackupService: UserDataBackupService
 
     // Launch view models
     let settingsViewModel: SettingsViewModel
@@ -161,9 +165,9 @@ final class ServiceContainer: ObservableObject {
         dictionaryService = DictionaryService()
         PerformanceMilestones.end(retainedStoreToken)
         soundService = SoundService()
-        audioDeviceService = AudioDeviceService(
-            inputActivationGuard: inputActivationGuard
-        )
+        audioDeviceService = PerformanceMilestones.measure(.audioDeviceDiscovery) {
+            AudioDeviceService(inputActivationGuard: inputActivationGuard)
+        }
         termPackRegistryService = TermPackRegistryService()
         appFormatterService = AppFormatterService()
         dictationPunctuationProfileStore = DictationPunctuationProfileStore()
@@ -175,8 +179,15 @@ final class ServiceContainer: ObservableObject {
         )
         accessibilityAnnouncementService = AccessibilityAnnouncementService()
         errorLogService = ErrorLogService()
+        userDataBackupService = UserDataBackupService(
+            historyService: historyService,
+            dictionaryService: dictionaryService,
+            profileService: profileService,
+            usageStatisticsService: usageStatisticsService
+        )
 
         // Launch view models
+        let launchViewModelToken = PerformanceMilestones.begin(.launchViewModelConstruction)
         settingsViewModel = SettingsViewModel(modelManager: modelManagerService)
         dictationViewModel = DictationViewModel(
             audioRecordingService: audioRecordingService,
@@ -210,6 +221,7 @@ final class ServiceContainer: ObservableObject {
             historyService: historyService,
             usageStatisticsService: usageStatisticsService
         )
+        PerformanceMilestones.end(launchViewModelToken)
 
     }
 

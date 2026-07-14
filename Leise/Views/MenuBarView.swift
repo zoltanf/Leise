@@ -1,12 +1,49 @@
 import SwiftUI
 import Combine
 
+struct MenuBarHotkeyStatus: Identifiable, Equatable {
+    let slot: HotkeySlotType
+    let shortcuts: [String]
+
+    var id: HotkeySlotType { slot }
+
+    var text: String {
+        let title = switch slot {
+        case .hybrid:
+            String(localized: "Hybrid")
+        case .pushToTalk:
+            String(localized: "Push-to-Talk")
+        case .toggle:
+            String(localized: "Toggle")
+        case .recentTranscriptions, .copyLastTranscription, .recorderToggle:
+            ""
+        }
+        return "\(title): \(shortcuts.joined(separator: ", "))"
+    }
+
+    @MainActor
+    static func current() -> [MenuBarHotkeyStatus] {
+        current(loadHotkeys: DictationSettingsHandler.loadHotkeys)
+    }
+
+    static func current(
+        loadHotkeys: (HotkeySlotType) -> [UnifiedHotkey]
+    ) -> [MenuBarHotkeyStatus] {
+        [HotkeySlotType.hybrid, .pushToTalk, .toggle].compactMap { slot in
+            let shortcuts = loadHotkeys(slot).map(HotkeyService.displayName)
+            guard !shortcuts.isEmpty else { return nil }
+            return MenuBarHotkeyStatus(slot: slot, shortcuts: shortcuts)
+        }
+    }
+}
+
 /// Lightweight state tracker for MenuBarView that only re-publishes
 /// on menu-relevant changes, avoiding high-frequency audioLevel updates.
 @MainActor
 private final class MenuBarState: ObservableObject {
     @Published var statusText: String
     @Published var statusImage: String
+    @Published var hotkeyStatuses: [MenuBarHotkeyStatus]
     @Published var isModelReady: Bool
     @Published var hasRecentTranscriptions: Bool
     @Published var canCopyLastTranscription: Bool
@@ -37,6 +74,7 @@ private final class MenuBarState: ObservableObject {
         self.recorderState = recorder.state
         self.canToggleRecorder = recorder.canToggleRecording
         self.dictationHotkeysPaused = hotkeyService.dictationHotkeysPaused
+        self.hotkeyStatuses = MenuBarHotkeyStatus.current()
         self.recentTranscriptionsMenuShortcut = DictationSettingsHandler.loadMenuShortcutDescriptor(for: .recentTranscriptions)
         self.copyLastTranscriptionMenuShortcut = DictationSettingsHandler.loadMenuShortcutDescriptor(for: .copyLastTranscription)
         self.recorderToggleMenuShortcut = DictationSettingsHandler.loadMenuShortcutDescriptor(for: .recorderToggle)
@@ -174,6 +212,7 @@ private final class MenuBarState: ObservableObject {
     }
 
     private func refreshMenuShortcuts() {
+        hotkeyStatuses = MenuBarHotkeyStatus.current()
         recentTranscriptionsMenuShortcut = DictationSettingsHandler.loadMenuShortcutDescriptor(for: .recentTranscriptions)
         copyLastTranscriptionMenuShortcut = DictationSettingsHandler.loadMenuShortcutDescriptor(for: .copyLastTranscription)
         recorderToggleMenuShortcut = DictationSettingsHandler.loadMenuShortcutDescriptor(for: .recorderToggle)
@@ -183,7 +222,6 @@ private final class MenuBarState: ObservableObject {
 enum MenuBarMenuItem: Hashable {
     case settings
     case history
-    case errorLog
     case toggleRecorder
     case toggleDictationHotkeysPause
     case transcribeFile
@@ -223,7 +261,7 @@ enum MenuBarMenuSection: String, CaseIterable, Hashable {
     func items(hasRecoverableRecording: Bool) -> [MenuBarMenuItem] {
         switch self {
         case .general:
-            [.settings, .history, .errorLog]
+            [.settings, .history]
         case .recorder:
             [.toggleRecorder]
         case .transcription:
@@ -245,6 +283,10 @@ struct MenuBarView: View {
             let _ = { ManagedAppWindowOpener.shared.openWindow = openWindow }()
 
             Label(status.statusText, systemImage: status.statusImage)
+
+            ForEach(status.hotkeyStatuses) { hotkeyStatus in
+                Label(hotkeyStatus.text, systemImage: "keyboard")
+            }
 
             Divider()
 
@@ -289,13 +331,6 @@ struct MenuBarView: View {
                 openManagedWindow("history")
             } label: {
                 Label(String(localized: "History"), systemImage: "clock.arrow.circlepath")
-            }
-
-        case .errorLog:
-            Button {
-                openManagedWindow("errors")
-            } label: {
-                Label(String(localized: "Error Log"), systemImage: "exclamationmark.triangle")
             }
 
         case .toggleRecorder:

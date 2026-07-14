@@ -27,6 +27,26 @@ def main() -> None:
 
     starts: dict[str, list[dict]] = defaultdict(list)
     rows: list[dict[str, object]] = []
+    current_dictation_request: dict | None = None
+    recorded_first_audio_buffer = False
+    recorded_first_preview = False
+
+    def append_derived_interval(name: str, start: dict, end: dict) -> None:
+        start_time = parse_timestamp(start["timestamp"])
+        end_time = parse_timestamp(end["timestamp"])
+        rows.append(
+            {
+                "scenario": args.scenario,
+                "run": args.run,
+                "pid": args.pid,
+                "name": name,
+                "type": "derived_interval",
+                "start_timestamp": start["timestamp"],
+                "end_timestamp": end["timestamp"],
+                "duration_ms": f"{(end_time - start_time).total_seconds() * 1000:.3f}",
+            }
+        )
+
     for event in events:
         name = event.get("signpostName", "")
         signpost_type = event.get("signpostType", "")
@@ -61,6 +81,32 @@ def main() -> None:
                     "duration_ms": "",
                 }
             )
+            if name == "dictation_requested":
+                current_dictation_request = event
+                recorded_first_audio_buffer = False
+                recorded_first_preview = False
+            elif (
+                name == "first_recording_audio_buffer"
+                and current_dictation_request is not None
+                and not recorded_first_audio_buffer
+            ):
+                append_derived_interval(
+                    "dictation_request_to_first_audio_buffer",
+                    current_dictation_request,
+                    event,
+                )
+                recorded_first_audio_buffer = True
+            elif (
+                name == "first_transcript_preview"
+                and current_dictation_request is not None
+                and not recorded_first_preview
+            ):
+                append_derived_interval(
+                    "dictation_request_to_first_transcript_preview",
+                    current_dictation_request,
+                    event,
+                )
+                recorded_first_preview = True
 
     fieldnames = [
         "scenario",

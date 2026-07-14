@@ -298,6 +298,10 @@ final class DictationViewModel: ObservableObject {
         streamingHandler.onPartialTextUpdate = { [weak self] text in
             guard let self else { return }
             if self.partialText != text {
+                if self.partialText.isEmpty,
+                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    PerformanceMilestones.firstTranscriptPreview()
+                }
                 self.partialText = text
             }
         }
@@ -456,6 +460,7 @@ final class DictationViewModel: ObservableObject {
     }
 
     private func handleFirstRecordingAudioBuffer() {
+        PerformanceMilestones.firstRecordingAudioBuffer()
         firstRecordingAudioBufferSeen = true
         emitRecordingStartCueIfReady()
     }
@@ -543,6 +548,7 @@ final class DictationViewModel: ObservableObject {
     private func setupBindings() {
         hotkeyService.onDictationStart = { [weak self] requestTimestamp in
             guard let self else { return }
+            PerformanceMilestones.dictationRequested()
             logger.info("hotkey→onDictationStart (state=\(String(describing: self.state), privacy: .public))")
             self.startRecording(requestUptimeNanoseconds: requestTimestamp)
         }
@@ -803,6 +809,10 @@ final class DictationViewModel: ObservableObject {
             updateRecordingStartCuePayload(activeApp: activeApp)
             let contextMs = (CFAbsoluteTimeGetCurrent() - contextStartTimestamp) * 1000
 
+            modelManager.prepareForDictation(
+                engineOverrideId: effectiveEngineOverrideId,
+                modelOverrideId: effectiveCloudModelOverride
+            )
             startLiveStreaming(allowLiveTranscription: indicatorTranscriptPreviewEnabled)
             scheduleDeferredRecordingMetadataCapture(
                 activeApp: activeApp,

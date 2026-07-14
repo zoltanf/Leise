@@ -112,6 +112,39 @@ final class DictionaryService: ObservableObject {
         }
     }
 
+    func replaceAll(with snapshots: [BackupDictionaryEntry]) throws {
+        guard let context = modelContext else {
+            throw DictionaryServiceMutationError.unavailable
+        }
+
+        do {
+            for entry in try context.fetch(FetchDescriptor<DictionaryEntry>()) {
+                context.delete(entry)
+            }
+            for snapshot in snapshots {
+                context.insert(DictionaryEntry(
+                    id: snapshot.id,
+                    type: snapshot.type,
+                    original: snapshot.original,
+                    replacement: snapshot.replacement,
+                    caseSensitive: snapshot.caseSensitive,
+                    isEnabled: snapshot.isEnabled,
+                    ctcMinSimilarity: snapshot.ctcMinSimilarity,
+                    source: snapshot.source,
+                    createdAt: snapshot.createdAt,
+                    updatedAt: snapshot.updatedAt,
+                    usageCount: snapshot.usageCount
+                ))
+            }
+            try context.save()
+            loadEntries()
+        } catch {
+            context.rollback()
+            loadEntries()
+            throw DictionaryServiceMutationError.saveFailed(error)
+        }
+    }
+
     func addEntry(
         type: DictionaryEntryType,
         original: String,

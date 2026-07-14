@@ -183,11 +183,6 @@ struct LeiseApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 900, height: 500)
 
-        Window(String(localized: "Error Log"), id: "errors") {
-            errorLogContent
-        }
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: 500, height: 400)
     }
 
     private var settingsScene: some Scene {
@@ -231,15 +226,6 @@ struct LeiseApp: App {
             EmptyView()
         } else {
             HistoryView()
-        }
-    }
-
-    @ViewBuilder
-    private var errorLogContent: some View {
-        if AppConstants.isRunningTests {
-            EmptyView()
-        } else {
-            ErrorLogView()
         }
     }
 
@@ -519,8 +505,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         if let identifier = window.identifier?.rawValue.lowercased() {
             if identifier.contains("settings")
                 || identifier.contains("setup")
-                || identifier.contains("history")
-                || identifier.contains("errors") {
+                || identifier.contains("history") {
                 return true
             }
         }
@@ -529,7 +514,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         return title == String(localized: "Settings")
             || title == String(localized: "Leise Setup")
             || title == String(localized: "History")
-            || title == String(localized: "Error Log")
     }
 
     private var hasVisibleManagedWindow: Bool {

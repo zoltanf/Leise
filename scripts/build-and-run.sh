@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app_path="$HOME/Applications/Leise.app"
 reset_setup=false
-reset_accessibility=false
+reset_permissions=false
 self_test_only=false
 
 usage() {
@@ -12,10 +12,11 @@ usage() {
 Usage: ./scripts/build-and-run.sh [options]
 
 Options:
-  --reset-setup          Show the startup tutorial from its first step.
-  --reset-accessibility  Remove the existing Accessibility grant before launch.
-  --self-test            Build and verify the canonical app without launching it.
-  -h, --help             Show this help.
+  --reset-setup           Show the startup tutorial from its first step.
+  --reset-permissions     Reset all macOS privacy grants before launch.
+  --reset-accessibility   Alias for --reset-permissions (backward compatibility).
+  --self-test             Build and verify the canonical app without launching it.
+  -h, --help              Show this help.
 EOF
 }
 
@@ -24,8 +25,8 @@ while [[ $# -gt 0 ]]; do
     --reset-setup)
       reset_setup=true
       ;;
-    --reset-accessibility)
-      reset_accessibility=true
+    --reset-permissions|--reset-accessibility)
+      reset_permissions=true
       ;;
     --self-test)
       self_test_only=true
@@ -60,9 +61,17 @@ if [[ "$reset_setup" == true ]]; then
   printf 'Reset the startup tutorial.\n'
 fi
 
-if [[ "$reset_accessibility" == true ]]; then
-  tccutil reset Accessibility com.leise.mac
-  printf 'Reset Accessibility permission; grant it once when Leise opens.\n'
+if [[ "$reset_permissions" == true ]]; then
+  info_plist="$app_path/Contents/Info.plist"
+  bundle_identifier="$(plutil -extract CFBundleIdentifier raw -o - "$info_plist")"
+  if [[ -z "$bundle_identifier" ]]; then
+    printf 'Could not read the app bundle identifier from: %s\n' "$info_plist" >&2
+    exit 1
+  fi
+
+  tccutil reset All "$bundle_identifier"
+  printf 'Reset all macOS privacy permissions for %s.\n' "$bundle_identifier"
+  printf 'Leise will request Accessibility, Microphone, and Screen & System Audio access again when needed.\n'
 fi
 
 printf 'Launching %s\n' "$app_path"

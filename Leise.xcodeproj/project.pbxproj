@@ -10,6 +10,24 @@
 	<string>60</string>
 	<key>objects</key>
 	<dict>
+		<key>E7B100000000000000000001</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E7B100000000000000000002</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E7B100000000000000000002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>UserDataBackupService.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>05313C25F9E79BCFC02899F2</key>
 		<dict>
 			<key>includeInIndex</key>
@@ -3120,6 +3138,7 @@
 				<string>BB00000000000000000032</string>
 				<string>BB00000000000000000050</string>
 				<string>BB00000000000000000148</string>
+				<string>E7B100000000000000000002</string>
 				<string>BB00000000000000000061</string>
 				<string>BB8390000000000000000003</string>
 				<string>B91F00000000000000000002</string>
@@ -3810,6 +3829,7 @@
 				<string>AA00000000000000000340</string>
 				<string>AA00000000000000000050</string>
 				<string>AA00000000000000000153</string>
+				<string>E7B100000000000000000001</string>
 				<string>A91F00000000000000000002</string>
 				<string>AA00000000000000000283</string>
 				<string>AA00000000000000000284</string>

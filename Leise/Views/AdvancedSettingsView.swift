@@ -5,10 +5,13 @@ struct AdvancedSettingsView: View {
     @ObservedObject private var modelManager = ServiceContainer.shared.modelManagerService
     @ObservedObject private var dictation = ServiceContainer.shared.dictationViewModel
     @ObservedObject private var errorLogService = ServiceContainer.shared.errorLogService
+    private let backupService = ServiceContainer.shared.userDataBackupService
 
     @State private var showClearUsageStatisticsConfirmation = false
-    @State private var showDiagnosticsExportError = false
-    @State private var diagnosticsExportErrorMessage = ""
+    @State private var showImportConfirmation = false
+    @State private var pendingImportURL: URL?
+    @State private var pendingImportSummary: UserDataBackupSummary?
+    @State private var notice: SettingsNotice?
 
     @AppStorage(UserDefaultsKeys.historyEnabled) private var historyEnabled = true
     @AppStorage(UserDefaultsKeys.historyRetentionDays) private var historyRetentionDays = 0
@@ -16,6 +19,36 @@ struct AdvancedSettingsView: View {
 
     var body: some View {
         Form {
+            Section(localizedAppText("Backup & Restore", de: "Sichern & Wiederherstellen")) {
+                Text(localizedAppText(
+                    "Export preferences, dictionary entries, profiles, and transcription history to one JSON file, or restore them from a previous backup.",
+                    de: "Exportiert Einstellungen, Wörterbucheinträge, Profile und den Transkriptionsverlauf in eine JSON-Datei oder stellt sie aus einer früheren Sicherung wieder her."
+                ))
+                .foregroundStyle(.secondary)
+
+                HStack {
+                    Button(action: exportUserData) {
+                        Label(
+                            localizedAppText("Export Backup", de: "Sicherung exportieren"),
+                            systemImage: "square.and.arrow.up"
+                        )
+                    }
+                    Button(action: chooseBackupToImport) {
+                        Label(
+                            localizedAppText("Import Backup", de: "Sicherung importieren"),
+                            systemImage: "square.and.arrow.down"
+                        )
+                    }
+                }
+
+                Text(localizedAppText(
+                    "API keys, downloaded models, caches, audio recordings, and custom sound files are not included.",
+                    de: "API-Schlüssel, heruntergeladene Modelle, Caches, Audioaufnahmen und eigene Sounddateien sind nicht enthalten."
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             Section(localizedAppText("Support Diagnostics", de: "Support-Diagnose")) {
                 HStack {
                     Button(action: exportDiagnostics) {
@@ -121,11 +154,124 @@ struct AdvancedSettingsView: View {
         .formStyle(.grouped)
         .padding()
         .frame(minWidth: 500, minHeight: 300)
-        .alert(localizedAppText("Export Failed", de: "Export fehlgeschlagen"), isPresented: $showDiagnosticsExportError) {
-            Button("OK", role: .cancel) {}
+        .confirmationDialog(
+            localizedAppText("Import Backup?", de: "Sicherung importieren?"),
+            isPresented: $showImportConfirmation
+        ) {
+            Button(localizedAppText("Replace Current Data", de: "Aktuelle Daten ersetzen"), role: .destructive) {
+                importPendingBackup()
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {
+                pendingImportURL = nil
+                pendingImportSummary = nil
+            }
         } message: {
-            Text(diagnosticsExportErrorMessage)
+            if let summary = pendingImportSummary {
+                Text(localizedAppText(
+                    "This replaces current settings and user data with \(summary.dictionaryEntryCount) dictionary entries, \(summary.profileCount) profiles, and \(summary.historyRecordCount) history records. This cannot be undone unless you export a backup first.",
+                    de: "Dabei werden die aktuellen Einstellungen und Benutzerdaten durch \(summary.dictionaryEntryCount) Wörterbucheinträge, \(summary.profileCount) Profile und \(summary.historyRecordCount) Verlaufseinträge ersetzt. Dies kann nur rückgängig gemacht werden, wenn zuvor eine Sicherung exportiert wurde."
+                ))
+            }
         }
+        .alert(item: $notice) { notice in
+            Alert(
+                title: Text(notice.title),
+                message: Text(notice.message),
+                dismissButton: .default(Text("OK"))
+            )
+        }
+    }
+
+    private func exportUserData() {
+        let panel = NSSavePanel()
+        panel.title = localizedAppText("Export Backup", de: "Sicherung exportieren")
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = backupFilename()
+
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                let summary = try backupService.exportBackup(to: url)
+                notice = SettingsNotice(
+                    title: localizedAppText("Backup Exported", de: "Sicherung exportiert"),
+                    message: localizedAppText(
+                        "Exported \(summary.preferenceCount) settings, \(summary.dictionaryEntryCount) dictionary entries, \(summary.profileCount) profiles, and \(summary.historyRecordCount) history records.",
+                        de: "\(summary.preferenceCount) Einstellungen, \(summary.dictionaryEntryCount) Wörterbucheinträge, \(summary.profileCount) Profile und \(summary.historyRecordCount) Verlaufseinträge wurden exportiert."
+                    )
+                )
+            } catch {
+                notice = SettingsNotice(
+                    title: localizedAppText("Export Failed", de: "Export fehlgeschlagen"),
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func chooseBackupToImport() {
+        let panel = NSOpenPanel()
+        panel.title = localizedAppText("Import Backup", de: "Sicherung importieren")
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                pendingImportSummary = try backupService.inspectBackup(at: url)
+                pendingImportURL = url
+                showImportConfirmation = true
+            } catch {
+                notice = SettingsNotice(
+                    title: localizedAppText("Invalid Backup", de: "Ungültige Sicherung"),
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func importPendingBackup() {
+        guard let url = pendingImportURL else { return }
+        defer {
+            pendingImportURL = nil
+            pendingImportSummary = nil
+        }
+
+        do {
+            let summary = try backupService.importBackup(from: url)
+            notice = SettingsNotice(
+                title: localizedAppText("Backup Imported", de: "Sicherung importiert"),
+                message: localizedAppText(
+                    "Restored \(summary.preferenceCount) settings, \(summary.dictionaryEntryCount) dictionary entries, \(summary.profileCount) profiles, and \(summary.historyRecordCount) history records. Quit and reopen Leise to apply every restored setting.",
+                    de: "\(summary.preferenceCount) Einstellungen, \(summary.dictionaryEntryCount) Wörterbucheinträge, \(summary.profileCount) Profile und \(summary.historyRecordCount) Verlaufseinträge wurden wiederhergestellt. Beenden und öffnen Sie Leise erneut, um alle Einstellungen anzuwenden."
+                )
+            )
+        } catch {
+            notice = SettingsNotice(
+                title: localizedAppText("Import Failed", de: "Import fehlgeschlagen"),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func backupFilename() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return "leise-backup-\(formatter.string(from: Date())).json"
+    }
+
+    private struct SettingsNotice: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+
+    private func showDiagnosticsExportFailure(_ error: Error) {
+        notice = SettingsNotice(
+            title: localizedAppText("Export Failed", de: "Export fehlgeschlagen"),
+            message: error.localizedDescription
+        )
     }
 
     private func exportDiagnostics() {
@@ -141,8 +287,7 @@ struct AdvancedSettingsView: View {
                 do {
                     try await errorLogService.exportDiagnostics(to: url)
                 } catch {
-                    diagnosticsExportErrorMessage = error.localizedDescription
-                    showDiagnosticsExportError = true
+                    showDiagnosticsExportFailure(error)
                 }
             }
         }

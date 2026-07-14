@@ -107,6 +107,38 @@ final class ProfileService: ObservableObject {
         fetchProfiles()
     }
 
+    func replaceAll(with snapshots: [BackupProfile]) throws {
+        do {
+            for profile in try modelContext.fetch(FetchDescriptor<Profile>()) {
+                modelContext.delete(profile)
+            }
+            for snapshot in snapshots {
+                modelContext.insert(Profile(
+                    id: snapshot.id,
+                    name: snapshot.name,
+                    isEnabled: snapshot.isEnabled,
+                    priority: snapshot.priority,
+                    bundleIdentifiers: snapshot.bundleIdentifiers,
+                    urlPatterns: snapshot.urlPatterns,
+                    inputLanguage: snapshot.inputLanguage,
+                    engineOverride: snapshot.engineOverride,
+                    cloudModelOverride: snapshot.cloudModelOverride,
+                    outputFormat: snapshot.outputFormat,
+                    hotkeyData: snapshot.hotkeyData,
+                    autoEnterEnabled: snapshot.autoEnterEnabled,
+                    createdAt: snapshot.createdAt,
+                    updatedAt: snapshot.updatedAt
+                ))
+            }
+            try modelContext.save()
+            fetchProfiles()
+        } catch {
+            modelContext.rollback()
+            fetchProfiles()
+            throw error
+        }
+    }
+
     func toggleProfile(_ profile: Profile) {
         profile.isEnabled.toggle()
         profile.updatedAt = Date()

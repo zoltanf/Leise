@@ -63,6 +63,54 @@ final class AudioRecorderViewModelTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: UserDefaultsKeys.recorderLivePreviewEnabled))
     }
 
+    func testRecorderOutputDirectoryPersistsAndRestores() throws {
+        let defaults = try makeDefaults()
+        let customDirectory = makeTemporaryDirectory()
+        let firstService = AudioRecorderService()
+        let firstViewModel = makeViewModel(
+            defaults: defaults,
+            engine: makeEngine(),
+            recorderService: firstService
+        )
+
+        firstViewModel.setOutputDirectory(customDirectory)
+
+        XCTAssertEqual(firstViewModel.selectedOutputDirectory, customDirectory.standardizedFileURL)
+        XCTAssertEqual(firstService.recordingsDirectory, customDirectory.standardizedFileURL)
+        XCTAssertEqual(
+            defaults.string(forKey: UserDefaultsKeys.recorderOutputDirectory),
+            customDirectory.standardizedFileURL.path
+        )
+
+        let restoredService = AudioRecorderService()
+        let restoredViewModel = makeViewModel(
+            defaults: defaults,
+            engine: makeEngine(),
+            recorderService: restoredService
+        )
+
+        XCTAssertEqual(restoredViewModel.selectedOutputDirectory, customDirectory.standardizedFileURL)
+        XCTAssertEqual(restoredService.recordingsDirectory, customDirectory.standardizedFileURL)
+    }
+
+    func testRecorderOutputDirectoryCanReturnToDefault() throws {
+        let defaults = try makeDefaults()
+        let customDirectory = makeTemporaryDirectory()
+        defaults.set(customDirectory.path, forKey: UserDefaultsKeys.recorderOutputDirectory)
+        let recorderService = AudioRecorderService()
+        let viewModel = makeViewModel(
+            defaults: defaults,
+            engine: makeEngine(),
+            recorderService: recorderService
+        )
+
+        viewModel.useDefaultOutputDirectory()
+
+        XCTAssertNil(viewModel.selectedOutputDirectory)
+        XCTAssertNil(defaults.string(forKey: UserDefaultsKeys.recorderOutputDirectory))
+        XCTAssertEqual(recorderService.recordingsDirectory, AudioRecorderService.defaultRecordingsDirectory)
+    }
+
     func testLivePreviewStartsOnlyWhenTranscriptAndPreviewAreEnabled() async throws {
         try preserveStandardDefaults()
 
@@ -127,6 +175,23 @@ final class AudioRecorderViewModelTests: XCTestCase {
         XCTAssertNil(capturedSelection?.deviceUID)
         XCTAssertNil(capturedSelection?.deviceID)
         XCTAssertFalse(capturedSelection?.hasExplicitDeviceSelection == true)
+    }
+
+    func testRecorderTranscriptionFailureAlertSummaryIncludesPhaseAndProviderError() throws {
+        let defaults = try makeDefaults()
+        let viewModel = makeViewModel(defaults: defaults, engine: makeEngine())
+        let failure = AudioRecorderViewModel.RecordingTranscriptionFailure(
+            phase: .emptyResult,
+            providerError: "Final transcription returned no text.",
+            engineName: "Parakeet",
+            modelName: "Parakeet TDT v3",
+            failedAt: Date()
+        )
+
+        let summary = viewModel.recorderTranscriptionFailureAlertSummary(failure)
+
+        XCTAssertTrue(summary.contains(failure.phase.displayName))
+        XCTAssertTrue(summary.contains(failure.providerError))
     }
 
     private func makeEngine() -> TestTranscriptionEngine {

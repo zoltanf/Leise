@@ -834,6 +834,30 @@ final class DockIconVisibilityTests: XCTestCase {
 }
 
 final class MenuBarGroupingTests: XCTestCase {
+    func testHotkeyStatusListsEveryConfiguredDictationTriggerInModeOrder() {
+        let statuses = MenuBarHotkeyStatus.current { slot in
+            switch slot {
+            case .hybrid:
+                [
+                    UnifiedHotkey(keyCode: 0, modifierFlags: 0, isFn: true),
+                    UnifiedHotkey(keyCode: 0, modifierFlags: NSEvent.ModifierFlags.command.rawValue, isFn: false),
+                ]
+            case .toggle:
+                [UnifiedHotkey(keyCode: 11, modifierFlags: NSEvent.ModifierFlags.control.rawValue, isFn: false)]
+            case .pushToTalk, .recentTranscriptions, .copyLastTranscription, .recorderToggle:
+                []
+            }
+        }
+
+        XCTAssertEqual(statuses.map(\.slot), [.hybrid, .toggle])
+        XCTAssertEqual(statuses.map(\.shortcuts), [["Fn", "⌘A"], ["⌃B"]])
+        XCTAssertEqual(statuses.map(\.text), ["Hybrid: Fn, ⌘A", "Toggle: ⌃B"])
+    }
+
+    func testHotkeyStatusIsEmptyWhenNoDictationTriggerIsConfigured() {
+        XCTAssertTrue(MenuBarHotkeyStatus.current { _ in [] }.isEmpty)
+    }
+
     func testMenuBarSectionsUseExpectedOrderAndLocalizedKeys() {
         XCTAssertEqual(
             MenuBarMenuSection.allCases.map(\.titleLocalizationKey),
@@ -844,7 +868,7 @@ final class MenuBarGroupingTests: XCTestCase {
     func testMenuBarSectionsContainExpectedItems() {
         XCTAssertEqual(
             MenuBarMenuSection.general.items,
-            [.settings, .history, .errorLog]
+            [.settings, .history]
         )
         XCTAssertEqual(
             MenuBarMenuSection.recorder.items,
@@ -861,6 +885,13 @@ final class MenuBarGroupingTests: XCTestCase {
         XCTAssertEqual(
             MenuBarMenuSection.updates.items,
             [.checkForUpdates]
+        )
+    }
+
+    func testSettingsPreferencePagesUseExpectedOrder() {
+        XCTAssertEqual(
+            SettingsSidebarLayout.preferenceTabs,
+            [.general, .parakeet, .fillerWords, .hotkeys, .appearance, .advanced, .errorLog]
         )
     }
 }

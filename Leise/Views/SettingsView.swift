@@ -3,7 +3,22 @@ import AppKit
 
 enum SettingsTab: Hashable {
     case home, general, appearance, recording, hotkeys, recorder
-    case dictationRecovery, fileTranscription, history, dictionary, profiles, parakeet, fillerWords, advanced, about
+    case dictationRecovery, fileTranscription, history, dictionary, profiles, parakeet, fillerWords, advanced, errorLog, about
+}
+
+enum SettingsSidebarLayout {
+    static let libraryTabs: [SettingsTab] = [.home, .history, .dictationRecovery, .dictionary]
+    static let recordingTabs: [SettingsTab] = [.recorder, .fileTranscription]
+    static let preferenceTabs: [SettingsTab] = [
+        .general,
+        .parakeet,
+        .fillerWords,
+        .hotkeys,
+        .appearance,
+        .advanced,
+        .errorLog,
+    ]
+    static let aboutTabs: [SettingsTab] = [.about]
 }
 
 private struct SettingsDestination: Identifiable, Hashable {
@@ -62,6 +77,7 @@ struct SettingsView: View {
                 badge: nil
             ),
             SettingsDestination(tab: .advanced, title: String(localized: "Advanced"), systemImage: "gearshape.2", badge: nil),
+            SettingsDestination(tab: .errorLog, title: String(localized: "Error Log"), systemImage: "exclamationmark.triangle", badge: nil),
             SettingsDestination(tab: .about, title: String(localized: "About"), systemImage: "info.circle", badge: nil)
         ].compactMap { $0 }
     }
@@ -150,6 +166,8 @@ struct SettingsView: View {
             FillerWordCleanupSettingsPage()
         case .advanced:
             AdvancedSettingsView()
+        case .errorLog:
+            ErrorLogView()
         case .about:
             AboutSettingsView()
         }
@@ -211,45 +229,22 @@ private func settingsDestination(_ destinations: [SettingsDestination], _ tab: S
 }
 
 private func settingsDestinationSections(_ destinations: [SettingsDestination]) -> [SettingsDestinationSection] {
-    let libraryDestinations = [
-        settingsDestination(destinations, .home),
-        settingsDestination(destinations, .history),
-        settingsDestination(destinations, .dictationRecovery),
-        settingsDestination(destinations, .dictionary)
-    ]
-
-    let preferencesDestinations = [
-        settingsDestination(destinations, .general),
-        settingsDestination(destinations, .appearance),
-        settingsDestination(destinations, .parakeet),
-        settingsDestination(destinations, .fillerWords),
-        settingsDestination(destinations, .hotkeys),
-        settingsDestination(destinations, .advanced)
-    ]
-
-    let recordingDestinations = [
-        settingsDestination(destinations, .recorder),
-        settingsDestination(destinations, .fileTranscription)
-    ]
-
     return [
         SettingsDestinationSection(
             id: "library",
-            destinations: libraryDestinations
+            destinations: SettingsSidebarLayout.libraryTabs.map { settingsDestination(destinations, $0) }
         ),
         SettingsDestinationSection(
             id: "recording",
-            destinations: recordingDestinations
+            destinations: SettingsSidebarLayout.recordingTabs.map { settingsDestination(destinations, $0) }
         ),
         SettingsDestinationSection(
             id: "preferences",
-            destinations: preferencesDestinations
+            destinations: SettingsSidebarLayout.preferenceTabs.map { settingsDestination(destinations, $0) }
         ),
         SettingsDestinationSection(
             id: "about",
-            destinations: [
-                settingsDestination(destinations, .about)
-            ]
+            destinations: SettingsSidebarLayout.aboutTabs.map { settingsDestination(destinations, $0) }
         )
     ]
 }
