@@ -212,7 +212,14 @@ final class DictationRecoveryViewModel: ObservableObject {
                     timestamp: Date(),
                     wordsCount: text.split(separator: " ").count,
                     durationSeconds: result.duration,
-                    appBundleIdentifier: Bundle.main.bundleIdentifier
+                    appName: localizedAppText("Dictation Recovery", de: "Dictation-Recovery"),
+                    appBundleIdentifier: Bundle.main.bundleIdentifier,
+                    language: result.detectedLanguage ?? languageSelection.requestedLanguage,
+                    engine: result.engineUsed,
+                    model: historyModelDisplayName(result: result),
+                    rawText: result.text,
+                    processedText: text,
+                    pipelineSteps: [localizedAppText("Recovered recording", de: "Wiederhergestellte Aufnahme")]
                 )
 
                 let historyID = UUID()

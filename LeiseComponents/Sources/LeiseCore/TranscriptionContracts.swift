@@ -46,6 +46,30 @@ public struct TranscriptionSourceProgress: Equatable, Sendable {
     }
 }
 
+public enum TranscriptionRequestPurpose: Equatable, Sendable {
+    case final
+    case preview
+}
+
+public struct TranscriptionPrecomputationRequest: Sendable {
+    public let sessionID: UUID
+    public let audio: TranscriptionAudio
+    public let prompt: String?
+    public let dictionaryTermHints: [DictionaryTermHint]
+
+    public init(
+        sessionID: UUID,
+        audio: TranscriptionAudio,
+        prompt: String? = nil,
+        dictionaryTermHints: [DictionaryTermHint] = []
+    ) {
+        self.sessionID = sessionID
+        self.audio = audio
+        self.prompt = prompt
+        self.dictionaryTermHints = dictionaryTermHints
+    }
+}
+
 public struct EngineTranscriptionSegment: Equatable, Sendable {
     public let text: String
     public let start: TimeInterval
@@ -108,6 +132,8 @@ public struct TranscriptionRequest: Sendable {
     public let language: String?
     public let prompt: String?
     public let dictionaryTermHints: [DictionaryTermHint]
+    public let purpose: TranscriptionRequestPurpose
+    public let sessionID: UUID?
     public let onTextProgress: TextProgress
     public let onSourceProgress: SourceProgress
     public let isCancelled: CancellationCheck
@@ -117,6 +143,8 @@ public struct TranscriptionRequest: Sendable {
         language: String? = nil,
         prompt: String? = nil,
         dictionaryTermHints: [DictionaryTermHint] = [],
+        purpose: TranscriptionRequestPurpose = .final,
+        sessionID: UUID? = nil,
         onTextProgress: @escaping TextProgress = { _ in true },
         onSourceProgress: @escaping SourceProgress = { _ in true },
         isCancelled: @escaping CancellationCheck = { Task.isCancelled }
@@ -125,6 +153,8 @@ public struct TranscriptionRequest: Sendable {
         self.language = language
         self.prompt = prompt
         self.dictionaryTermHints = dictionaryTermHints
+        self.purpose = purpose
+        self.sessionID = sessionID
         self.onTextProgress = onTextProgress
         self.onSourceProgress = onSourceProgress
         self.isCancelled = isCancelled
@@ -151,11 +181,22 @@ public protocol TranscriptionEngine: AnyObject, Sendable {
 
     func selectModel(id: String)
     func prepareModel(id: String?, allowDownloads: Bool) async throws
+    func shouldPrecomputeFinalTranscription(dictionaryTermHints: [DictionaryTermHint]) -> Bool
+    func precomputeFinalTranscription(_ request: TranscriptionPrecomputationRequest) async
+    func discardFinalTranscriptionPrecomputation(sessionID: UUID)
     func transcribe(_ request: TranscriptionRequest) async throws -> EngineTranscriptionResult
     func unloadModel(clearPersistence: Bool)
 }
 
 public extension TranscriptionEngine {
+    func shouldPrecomputeFinalTranscription(dictionaryTermHints _: [DictionaryTermHint]) -> Bool {
+        false
+    }
+
+    func precomputeFinalTranscription(_: TranscriptionPrecomputationRequest) async {}
+
+    func discardFinalTranscriptionPrecomputation(sessionID _: UUID) {}
+
     func prepareModel(id: String? = nil) async throws {
         try await prepareModel(id: id, allowDownloads: true)
     }

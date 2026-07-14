@@ -33,4 +33,13 @@ final class ComponentSettingsStore: ParakeetStore, FillerWordCleanupStore, @unch
     var shouldRestoreLoadedModelsPassively: Bool {
         ModelAutoUnloadPolicy.shouldRestoreLoadedModelsPassively()
     }
+
+    var bundledModelsDirectory: URL? {
+        guard namespace == "parakeet",
+              let resources = Bundle.main.resourceURL else { return nil }
+        let models = resources.appendingPathComponent("OfflineModels", isDirectory: true)
+        let manifest = models.appendingPathComponent("manifest.json", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: manifest.path) else { return nil }
+        return models
+    }
 }

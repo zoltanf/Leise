@@ -1,0 +1,19 @@
+Leise Offline Edition - Included Speech Models
+================================================
+
+This edition includes Core ML model conversions maintained by FluidInference:
+
+- Parakeet TDT 0.6B v2 Core ML
+  https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml
+- Parakeet TDT 0.6B v3 Core ML
+  https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml
+- Parakeet CTC 110M Core ML
+  https://huggingface.co/FluidInference/parakeet-ctc-110m-coreml
+
+The model repositories identify NVIDIA as the original model creator and are
+distributed under the Creative Commons Attribution 4.0 International license:
+
+https://creativecommons.org/licenses/by/4.0/
+
+The model weights are separate works from the Leise application source code.
+Leise itself remains licensed under GNU GPL v3.0 or later.

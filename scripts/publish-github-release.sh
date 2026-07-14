@@ -69,10 +69,13 @@ done
 version="$(bash "$repo_root/scripts/version.sh" current)"
 tag="v$version"
 architecture="arm64"
-artifact_base="Leise-$version-macOS-$architecture"
 artifact_dir="$repo_root/dist"
-zip_path="$artifact_dir/$artifact_base.zip"
-dmg_path="$artifact_dir/$artifact_base.dmg"
+on_demand_base="Leise-$version-macOS-$architecture"
+offline_base="Leise-$version-Offline-macOS-$architecture"
+on_demand_zip_path="$artifact_dir/$on_demand_base.zip"
+offline_zip_path="$artifact_dir/$offline_base.zip"
+on_demand_dmg_path="$artifact_dir/$on_demand_base.dmg"
+offline_dmg_path="$artifact_dir/$offline_base.dmg"
 checksum_path="$artifact_dir/Leise-$version-SHA256SUMS.txt"
 
 origin_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
@@ -97,7 +100,7 @@ if [[ "$dry_run" == true ]]; then
     log "working tree is clean"
   fi
   [[ "$skip_tests" == true ]] || log "would run the Xcode and LeiseComponents tests"
-  [[ "$skip_build" == true ]] || log "would build and verify $artifact_base"
+  [[ "$skip_build" == true ]] || log "would build and verify on-demand and offline editions"
   log "would create and push tag $tag"
   if [[ "$draft" == true ]]; then
     log "would create a draft GitHub release"
@@ -154,8 +157,10 @@ if [[ "$skip_build" == false ]]; then
   bash "$repo_root/scripts/build-release-local.sh" "${build_options[@]}"
 fi
 
-artifacts=("$zip_path")
-[[ "$create_dmg" == false ]] || artifacts+=("$dmg_path")
+artifacts=("$on_demand_zip_path" "$offline_zip_path")
+if [[ "$create_dmg" == true ]]; then
+  artifacts+=("$on_demand_dmg_path" "$offline_dmg_path")
+fi
 artifacts+=("$checksum_path")
 for artifact in "${artifacts[@]}"; do
   [[ -f "$artifact" ]] || fail "release artifact is missing: $artifact"
@@ -178,6 +183,11 @@ previous_tag="$(
 )"
 
 installation_notes="$(cat <<'EOF'
+## Choose an edition
+
+- **Leise** is the smaller download and fetches the selected speech model on demand.
+- **Leise Offline** includes Parakeet v2, Parakeet v3, and the vocabulary-boosting model. It needs no model downloads after installation.
+
 ## Installation note
 
 This community build is ad-hoc signed and is **not notarized by Apple**. After

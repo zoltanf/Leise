@@ -50,16 +50,34 @@ Build a clean Apple Silicon Release app and package it with:
 ./scripts/build-release-local.sh
 ```
 
-The command writes these files to `dist/`:
+By default the command builds both release editions and writes these files to `dist/`:
 
 - `Leise-X.Y.Z-macOS-arm64.zip`
 - `Leise-X.Y.Z-macOS-arm64.dmg`
+- `Leise-X.Y.Z-Offline-macOS-arm64.zip`
+- `Leise-X.Y.Z-Offline-macOS-arm64.dmg`
 - `Leise-X.Y.Z-SHA256SUMS.txt`
 
-It builds with code coverage and the debug dylib disabled, applies a local ad-hoc signature,
-restores Leise's entitlements, verifies the bundle and binary, and uses only native macOS
-packaging tools. Pass `--no-dmg` when only a ZIP is needed or `--no-clean` to reuse the
-Release DerivedData cache.
+The standard edition keeps the existing on-demand model downloads. The offline edition
+includes Parakeet TDT v2, Parakeet TDT v3, and Parakeet CTC 110M for vocabulary boosting.
+The first offline build downloads about 1 GB into `.build/OfflineModels`; later builds reuse
+that ignored cache. Model files are deliberately not committed to Git.
+
+The script builds with code coverage and the debug dylib disabled, applies a local ad-hoc
+signature after each edition's resources are final, restores Leise's entitlements, verifies
+the bundle, binary, model manifest, required model files, and attribution notice, and uses
+native macOS packaging tools. Pass `--variant on-demand` or `--variant offline` to build one
+edition, `--no-dmg` when only ZIPs are needed, or `--no-clean` to reuse Release DerivedData.
+
+Offline model preparation can also be run separately:
+
+```sh
+./scripts/prepare-offline-models.sh
+```
+
+The included FluidInference Core ML conversions and their underlying NVIDIA Parakeet models
+are distributed under CC BY 4.0. Attribution and source links are embedded at
+`Leise.app/Contents/Resources/OfflineModels/NOTICE.txt` in the offline edition.
 
 ## Publish to GitHub Releases
 
@@ -92,9 +110,10 @@ Then test, build, tag, push, and publish:
 ```
 
 The publisher requires a clean working tree and valid `gh` authentication. It creates the
-annotated `vX.Y.Z` tag only after the tests and artifact verification succeed. Use `--draft`
-to create a draft release. `--skip-tests` and `--skip-build` are available for recovery from
-a partially completed publication, but should not be used for a normal release.
+annotated `vX.Y.Z` tag only after the tests and both editions' artifact verification succeed,
+then uploads both ZIPs, both DMGs, and their shared checksum file. Use `--draft` to create a
+draft release. `--skip-tests` and `--skip-build` are available for recovery from a partially
+completed publication, but should not be used for a normal release.
 
 ## Gatekeeper and signing limitations
 

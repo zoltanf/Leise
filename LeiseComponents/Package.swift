@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "LeiseCore", targets: ["LeiseCore"]),
         .library(name: "ParakeetEngine", targets: ["ParakeetEngine"]),
         .library(name: "FillerWordCleanup", targets: ["FillerWordCleanup"]),
+        .executable(name: "OfflineModelPrep", targets: ["OfflineModelPrep"]),
     ],
     dependencies: [
         .package(url: "https://github.com/FluidInference/FluidAudio.git", branch: "main"),
@@ -28,6 +29,12 @@ let package = Package(
         .target(
             name: "FillerWordCleanup",
             dependencies: ["LeiseCore"]
+        ),
+        .executableTarget(
+            name: "OfflineModelPrep",
+            dependencies: [
+                .product(name: "FluidAudio", package: "FluidAudio"),
+            ]
         ),
         .testTarget(
             name: "LeiseCoreTests",

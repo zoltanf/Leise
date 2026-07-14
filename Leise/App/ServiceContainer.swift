@@ -109,7 +109,8 @@ final class ServiceContainer: ObservableObject {
         HistoryViewModel(
             historyService: historyService,
             textDiffService: textDiffService,
-            dictionaryService: dictionaryService
+            dictionaryService: dictionaryService,
+            usageStatisticsService: usageStatisticsService
         )
     }
     private lazy var profilesScope = MemoizedFeature { [unowned self] in

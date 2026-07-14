@@ -19,3 +19,9 @@ import Testing
     ])
     #expect(DictionaryTerms.clippedHints(hints, maxTotalCharacters: 5).map(\.text) == ["Leise"])
 }
+
+@Test func transcriptionRequestsDefaultToAuthoritativeFinalPurpose() {
+    let request = TranscriptionRequest(audio: TranscriptionAudio(samples: []))
+    #expect(request.purpose == .final)
+    #expect(request.sessionID == nil)
+}

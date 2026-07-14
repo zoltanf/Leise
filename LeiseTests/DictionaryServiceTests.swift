@@ -644,6 +644,13 @@ final class UserDataBackupServiceTests: XCTestCase {
             modelUsed: "tdt-v3",
             pipelineSteps: ["punctuation"]
         )
+        let historyRecord = try XCTUnwrap(history.records.first)
+        history.updateRecord(
+            historyRecord,
+            finalText: "Test two.",
+            isManualEdit: true,
+            changedWordCount: 1
+        )
 
         let originalDictionaryID = try XCTUnwrap(dictionary.entries.first?.id)
         let originalProfileID = try XCTUnwrap(profiles.profiles.first?.id)
@@ -688,10 +695,18 @@ final class UserDataBackupServiceTests: XCTestCase {
         XCTAssertEqual(history.records.count, 1)
         XCTAssertEqual(history.records.first?.id, originalHistoryID)
         XCTAssertEqual(history.records.first?.pipelineStepList, ["punctuation"])
+        XCTAssertEqual(history.records.first?.initialFinalText, "Test one.")
+        XCTAssertEqual(history.records.first?.finalText, "Test two.")
+        XCTAssertEqual(history.records.first?.manualEditCount, 1)
+        XCTAssertEqual(history.records.first?.manualChangedWordCount, 1)
+        XCTAssertNotNil(history.records.first?.lastManuallyEditedAt)
 
         let statistics = usage.summary(from: nil)
         XCTAssertEqual(statistics.transcriptionCount, 1)
         XCTAssertEqual(statistics.words, history.records.first?.wordsCount)
+        XCTAssertEqual(statistics.manualCorrectionCount, 1)
+        XCTAssertEqual(statistics.correctionUsage.values.first?.original, "one")
+        XCTAssertEqual(statistics.correctionUsage.values.first?.replacement, "two")
     }
 
     @MainActor

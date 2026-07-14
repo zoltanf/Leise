@@ -10,15 +10,18 @@ final class ParakeetEngineImplementationTests: XCTestCase {
         private var defaults: [String: Box]
         private var secrets: [String: String]
         let shouldRestoreLoadedModelsPassively: Bool
+        let bundledModelsDirectory: URL?
 
         init(
             defaults: [String: Any] = [:],
             secrets: [String: String] = [:],
-            shouldRestoreLoadedModelsPassively: Bool = true
+            shouldRestoreLoadedModelsPassively: Bool = true,
+            bundledModelsDirectory: URL? = nil
         ) throws {
             self.defaults = defaults.mapValues(Box.init(value:))
             self.secrets = secrets
             self.shouldRestoreLoadedModelsPassively = shouldRestoreLoadedModelsPassively
+            self.bundledModelsDirectory = bundledModelsDirectory
         }
 
         func storeSecret(key: String, value: String) throws {
@@ -112,6 +115,50 @@ final class ParakeetEngineImplementationTests: XCTestCase {
         XCTAssertEqual(
             ParakeetEngineImplementation.vocabularyAssetURL(for: .v3).absoluteString,
             "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml/resolve/main/parakeet_vocab.json"
+        )
+    }
+
+    func testOfflineDistributionUsesBundledAssetsAndLoadingLanguage() throws {
+        let directory = try makeTemporaryDirectory(prefix: "OfflineModels")
+        let store = try TestStore(bundledModelsDirectory: directory)
+        let engine = makeEngine(store: store)
+
+        XCTAssertTrue(engine.isOfflineDistribution)
+        engine.modelState = .downloading
+        XCTAssertEqual(engine.currentSettingsActivity?.message, "Loading included model")
+    }
+
+    func testIncompleteOfflineModelFailsWithoutInstallingCacheFiles() async throws {
+        let directory = try makeTemporaryDirectory(prefix: "OfflineModels")
+        let store = try TestStore(bundledModelsDirectory: directory)
+        let engine = makeEngine(store: store)
+
+        await engine.loadModel()
+
+        guard case .error(let message) = engine.modelState else {
+            return XCTFail("Expected an incomplete offline package error")
+        }
+        XCTAssertTrue(message.contains("Reinstall the offline edition"))
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: directory.path),
+            []
+        )
+    }
+
+    func testIncompleteOfflineVocabularyModelFailsWithoutDownloading() async throws {
+        let directory = try makeTemporaryDirectory(prefix: "OfflineModels")
+        let store = try TestStore(bundledModelsDirectory: directory)
+        let engine = makeEngine(store: store)
+
+        await engine.downloadCtcModel()
+
+        guard case .error(let message) = engine.ctcModelState else {
+            return XCTFail("Expected an incomplete offline vocabulary model error")
+        }
+        XCTAssertTrue(message.contains("Reinstall the offline edition"))
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: directory.path),
+            []
         )
     }
 
@@ -514,5 +561,52 @@ final class ParakeetEngineImplementationTests: XCTestCase {
         for key in envKeys {
             XCTAssertEqual(getenv(key).map { String(cString: $0) }, "hf_env_parakeet")
         }
+    }
+
+    func testCtcChunkRangesMatchFluidAudioWindowing() {
+        let sampleCount = 60 * 16_000
+        let completed = ParakeetEngineImplementation.ctcChunkRanges(
+            sampleCount: sampleCount,
+            includeIncompleteTail: false
+        )
+        let final = ParakeetEngineImplementation.ctcChunkRanges(
+            sampleCount: sampleCount,
+            includeIncompleteTail: true
+        )
+
+        XCTAssertEqual(completed, [
+            0..<240_000,
+            208_000..<448_000,
+            416_000..<656_000,
+            624_000..<864_000,
+        ])
+        XCTAssertEqual(final, completed + [832_000..<960_000])
+    }
+
+    func testCtcChunkMergeMatchesFluidAudioLogSpaceOverlapAverage() {
+        let first = ParakeetEngineImplementation.CtcLogProbabilityChunk(
+            startSample: 0,
+            endSample: 240_000,
+            logProbs: [
+                [logf(0.9), logf(0.1)],
+                [logf(0.8), logf(0.2)],
+            ],
+            frameDuration: 2
+        )
+        let second = ParakeetEngineImplementation.CtcLogProbabilityChunk(
+            startSample: 208_000,
+            endSample: 448_000,
+            logProbs: [
+                [logf(0.2), logf(0.8)],
+                [logf(0.1), logf(0.9)],
+            ],
+            frameDuration: 2
+        )
+
+        let merged = ParakeetEngineImplementation.mergeCtcLogProbabilityChunks([first, second])
+
+        XCTAssertEqual(merged.logProbs.count, 3)
+        XCTAssertEqual(expf(merged.logProbs[1][0]), 0.4, accuracy: 0.0001)
+        XCTAssertEqual(expf(merged.logProbs[1][1]), 0.4, accuracy: 0.0001)
     }
 }

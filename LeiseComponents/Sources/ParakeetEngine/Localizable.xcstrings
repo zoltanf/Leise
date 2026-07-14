@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Both models run locally with similar speed, download size, and memory use. No API key is required.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beide Modelle laufen lokal und haben eine ähnliche Geschwindigkeit, Downloadgröße und Speichernutzung. Es ist kein API-Schlüssel erforderlich."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どちらのモデルもローカルで動作し、速度、ダウンロードサイズ、メモリ使用量はほぼ同じです。APIキーは不要です。"
+          }
+        }
+      }
+    },
     "CTC model (~100 MB) - downloads automatically on first use, or:": {
       "localizations": {
         "de": {
@@ -113,6 +129,22 @@
         }
       }
     },
+    "Runs a second local speech model to detect dictionary terms. This can improve names and technical vocabulary, but uses more processing time on long dictations. Leise prepares completed audio windows while you speak to reduce the wait after stopping.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verwendet ein zweites lokales Sprachmodell, um Wörterbuchbegriffe zu erkennen. Das kann Namen und Fachbegriffe verbessern, benötigt bei langen Diktaten aber mehr Rechenzeit. Leise bereitet abgeschlossene Audioabschnitte bereits während des Sprechens vor, um die Wartezeit nach dem Beenden zu verkürzen."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "辞書用語を検出するために、2つ目のローカル音声モデルを使用します。名前や専門用語の認識を改善できますが、長い音声入力では処理時間が増えます。Leiseは停止後の待ち時間を短縮するため、話している間に完了済みの音声区間を準備します。"
+          }
+        }
+      }
+    },
     "Hugging Face Token": {
       "localizations": {
         "de": {
@@ -161,34 +193,34 @@
         }
       }
     },
-    "NVIDIA Parakeet TDT V2 - extremely fast on Apple Silicon. English only, highest recall. No API key required.": {
+    "Best for English-only dictation. V2 generally has higher English recall. Choose V3 if you dictate in another language.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "NVIDIA Parakeet TDT V2 - extrem schnell auf Apple Silicon. Nur Englisch, höchster Recall. Kein API-Schlüssel nötig."
+            "value": "Am besten für ausschließlich englische Diktate. V2 erzielt bei Englisch im Allgemeinen eine höhere Erkennungsrate. Wähle V3, wenn du in einer anderen Sprache diktierst."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "NVIDIA Parakeet TDT V2 - Apple Siliconで非常に高速。英語のみ、最高のRecall。APIキー不要。"
+            "value": "英語のみの音声入力に最適です。V2は一般に英語の認識率が高くなります。他の言語で音声入力する場合はV3を選んでください。"
           }
         }
       }
     },
-    "NVIDIA Parakeet TDT - extremely fast on Apple Silicon. 25 European languages, no API key required.": {
+    "Recommended for most users. V3 supports 25 European languages, including English and German. Choose V2 only for English-only dictation.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "NVIDIA Parakeet TDT - extrem schnell auf Apple Silicon. 25 europäische Sprachen, kein API-Schlüssel nötig."
+            "value": "Für die meisten Benutzer empfohlen. V3 unterstützt 25 europäische Sprachen, darunter Englisch und Deutsch. Wähle V2 nur für ausschließlich englische Diktate."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "NVIDIA Parakeet TDT - Apple Siliconで非常に高速。25のヨーロッパ語、APIキー不要。"
+            "value": "ほとんどのユーザーに推奨します。V3は英語とドイツ語を含む25のヨーロッパ言語に対応しています。英語のみの音声入力ではV2を選択できます。"
           }
         }
       }

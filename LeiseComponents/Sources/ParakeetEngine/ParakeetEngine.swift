@@ -63,10 +63,18 @@ public enum ParakeetRuntimeRecovery {
 
 final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendable {
     static let vocabularyAssetFileName = "parakeet_vocab.json"
+    static let v2BundledFolderName = "parakeet-tdt-0.6b-v2"
+    static let v3BundledFolderName = "parakeet-tdt-0.6b-v3"
+    static let ctcBundledFolderName = "parakeet-ctc-110m-coreml"
     private static let logger = Logger(subsystem: "com.leise.engine.parakeet", category: "Transcription")
     private static let shortClipConfidenceThreshold: Float = 0.55
     private static let shortClipConfidenceGateDuration: TimeInterval = 1.0
     private static let fluidAudioProgressMinimumSampleCount = 240_000
+    static let ctcChunkSampleCount = ASRConstants.maxModelSamples
+    static let ctcChunkOverlapSampleCount = 32_000
+    static var ctcChunkStrideSampleCount: Int {
+        ctcChunkSampleCount - ctcChunkOverlapSampleCount
+    }
     typealias VocabularyAssetFetcher = @Sendable (_ url: URL, _ description: String) async throws -> Data
 
     fileprivate let store: any ParakeetStore
@@ -82,12 +90,26 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
 
     // Vocabulary Boosting
     fileprivate var ctcModels: CtcModels?
+    fileprivate var ctcModelDirectory: URL?
     fileprivate var ctcTokenizer: CtcTokenizer?
     fileprivate var ctcSpotter: CtcKeywordSpotter?
     fileprivate var customVocabulary: CustomVocabularyContext?
     fileprivate var vocabularyRescorer: VocabularyRescorer?
     fileprivate var vocabSizeConfig: ContextBiasingConstants.VocabSizeConfig?
     fileprivate var vocabularyBoostingEnabled: Bool = false
+    struct CtcLogProbabilityChunk: Sendable {
+        let startSample: Int
+        let endSample: Int
+        let logProbs: [[Float]]
+        let frameDuration: Double
+    }
+    private struct VocabularyPrecomputationSession: Sendable {
+        let id: UUID
+        let vocabularySignature: String
+        let modelID: String
+        var chunksByStartSample: [Int: CtcLogProbabilityChunk]
+    }
+    private var vocabularyPrecomputationSession: VocabularyPrecomputationSession?
     private let transcriptionGate = AsyncTranscriptionGate()
     var ctcModelState: CtcModelState = .notDownloaded
     var lastConfiguredPrompt: String?
@@ -145,6 +167,7 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     }
 
     var selectedModelID: String? { _selectedModelId }
+    var isOfflineDistribution: Bool { store.bundledModelsDirectory != nil }
     var allowsTranscriptPreviewFallback: Bool { true }
     var supportsStreaming: Bool { true }
 
@@ -174,13 +197,17 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     func transcribe(
         audio: TranscriptionAudio,
         language: String?,
-        prompt: String?
+        prompt: String?,
+        purpose: TranscriptionRequestPurpose = .final,
+        sessionID: UUID? = nil
     ) async throws -> EngineTranscriptionResult {
         try await transcribe(
             audio: audio,
             language: language,
             prompt: prompt,
             dictionaryTermHints: [],
+            purpose: purpose,
+            sessionID: sessionID,
             onProgress: { _ in true },
             onSourceProgress: { _ in true }
         )
@@ -191,6 +218,8 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
         language: String?,
         prompt: String?,
         dictionaryTermHints: [DictionaryTermHint],
+        purpose: TranscriptionRequestPurpose = .final,
+        sessionID: UUID? = nil,
         onProgress: @Sendable @escaping (String) -> Bool,
         onSourceProgress: @Sendable @escaping (TranscriptionSourceProgress) -> Bool
     ) async throws -> EngineTranscriptionResult {
@@ -200,6 +229,8 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
                 language: language,
                 prompt: prompt,
                 dictionaryTermHints: dictionaryTermHints,
+                purpose: purpose,
+                sessionID: sessionID,
                 onProgress: onProgress,
                 onSourceProgress: onSourceProgress
             )
@@ -211,6 +242,8 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
         language: String?,
         prompt: String?,
         dictionaryTermHints: [DictionaryTermHint],
+        purpose: TranscriptionRequestPurpose,
+        sessionID: UUID?,
         onProgress: @Sendable @escaping (String) -> Bool,
         onSourceProgress: @Sendable @escaping (TranscriptionSourceProgress) -> Bool
     ) async throws -> EngineTranscriptionResult {
@@ -218,7 +251,7 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
             throw TranscriptionEngineFailure.notReady
         }
 
-        if vocabularyBoostingEnabled {
+        if vocabularyBoostingEnabled, purpose == .final {
             await configureBoostingIfNeeded(prompt: prompt, dictionaryTermHints: dictionaryTermHints)
         }
 
@@ -251,15 +284,24 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
         }
         defer { progressTask?.cancel() }
 
+        let baseTranscriptionStart = ContinuousClock.now
         let result = try await asrManager.transcribe(
             normalizedSamples,
             decoderState: &decoderState,
             language: fluidLanguage
         )
-        let finalResult = await applyVocabularyRescoringIfNeeded(
-            to: result,
-            audioSamples: normalizedSamples
+        Self.logger.info(
+            "Base TDT transcription finished in \(ContinuousClock.now - baseTranscriptionStart), purpose=\(String(describing: purpose), privacy: .public), audioSeconds=\(String(format: "%.1f", audio.duration), privacy: .public)"
         )
+        let finalResult = if purpose == .final {
+            await applyVocabularyRescoringIfNeeded(
+                to: result,
+                audioSamples: normalizedSamples,
+                sessionID: sessionID
+            )
+        } else {
+            result
+        }
         let trimmedText = finalResult.text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if audio.duration < Self.shortClipConfidenceGateDuration {
@@ -401,14 +443,24 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
 
     // MARK: - Vocabulary Boosting
 
-    fileprivate func downloadCtcModel() async {
+    func downloadCtcModel() async {
         ctcModelState = .downloading
         do {
-            applyHuggingFaceTokenToEnvironment()
-            let models = try await CtcModels.downloadAndLoad(variant: .ctc110m)
-            let cacheDir = CtcModels.defaultCacheDirectory(for: .ctc110m)
-            let tokenizer = try await CtcTokenizer.load(from: cacheDir)
+            let directory: URL
+            let models: CtcModels
+            if let bundledDirectory = bundledCtcModelDirectory {
+                disableFluidAudioNetwork(for: bundledDirectory)
+                try validateBundledCtcModel(at: bundledDirectory)
+                directory = bundledDirectory
+                models = try await CtcModels.loadDirect(from: bundledDirectory, variant: .ctc110m)
+            } else {
+                applyHuggingFaceTokenToEnvironment()
+                models = try await CtcModels.downloadAndLoad(variant: .ctc110m)
+                directory = CtcModels.defaultCacheDirectory(for: .ctc110m)
+            }
+            let tokenizer = try await CtcTokenizer.load(from: directory)
             ctcModels = models
+            ctcModelDirectory = directory
             ctcTokenizer = tokenizer
             ctcModelState = .ready
         } catch {
@@ -432,6 +484,162 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
             let threshold = $0.ctcMinSimilarity.map { String(format: "%.4f", Double($0)) } ?? "auto"
             return "\($0.text)|\(threshold)"
         }.joined(separator: "\u{1F}")
+    }
+
+    func shouldPrecomputeFinalTranscription(dictionaryTermHints: [DictionaryTermHint]) -> Bool {
+        vocabularyBoostingEnabled && !dictionaryTermHints.isEmpty && isConfigured
+    }
+
+    func precomputeFinalTranscription(_ request: TranscriptionPrecomputationRequest) async {
+        guard shouldPrecomputeFinalTranscription(dictionaryTermHints: request.dictionaryTermHints) else {
+            return
+        }
+
+        await configureBoostingIfNeeded(
+            prompt: request.prompt,
+            dictionaryTermHints: request.dictionaryTermHints
+        )
+        guard let spotter = ctcSpotter,
+              let vocabulary = customVocabulary,
+              let vocabularySignature = lastConfiguredPrompt,
+              let modelID = loadedModelId else {
+            return
+        }
+
+        if vocabularyPrecomputationSession?.id != request.sessionID
+            || vocabularyPrecomputationSession?.vocabularySignature != vocabularySignature
+            || vocabularyPrecomputationSession?.modelID != modelID {
+            vocabularyPrecomputationSession = VocabularyPrecomputationSession(
+                id: request.sessionID,
+                vocabularySignature: vocabularySignature,
+                modelID: modelID,
+                chunksByStartSample: [:]
+            )
+        }
+
+        let inferenceVocabulary = Self.inferenceOnlyVocabulary(from: vocabulary)
+        let ranges = Self.ctcChunkRanges(
+            sampleCount: request.audio.samples.count,
+            includeIncompleteTail: false
+        )
+
+        for range in ranges {
+            guard !Task.isCancelled else { return }
+            guard vocabularyPrecomputationSession?.chunksByStartSample[range.lowerBound] == nil else {
+                continue
+            }
+
+            let startedAt = ContinuousClock.now
+            do {
+                let spotResult = try await spotter.spotKeywordsWithLogProbs(
+                    audioSamples: Array(request.audio.samples[range]),
+                    customVocabulary: inferenceVocabulary,
+                    minScore: nil
+                )
+                guard vocabularyPrecomputationSession?.id == request.sessionID,
+                      vocabularyPrecomputationSession?.vocabularySignature == vocabularySignature,
+                      vocabularyPrecomputationSession?.modelID == modelID else {
+                    return
+                }
+                vocabularyPrecomputationSession?.chunksByStartSample[range.lowerBound] = CtcLogProbabilityChunk(
+                    startSample: range.lowerBound,
+                    endSample: range.upperBound,
+                    logProbs: spotResult.logProbs,
+                    frameDuration: spotResult.frameDuration
+                )
+                Self.logger.info(
+                    "Precomputed vocabulary CTC window in \(ContinuousClock.now - startedAt), startSeconds=\(String(format: "%.1f", Double(range.lowerBound) / 16_000), privacy: .public)"
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                Self.logger.warning("Vocabulary CTC precomputation failed: \(error.localizedDescription)")
+                return
+            }
+        }
+    }
+
+    func discardFinalTranscriptionPrecomputation(sessionID: UUID) {
+        guard vocabularyPrecomputationSession?.id == sessionID else { return }
+        vocabularyPrecomputationSession = nil
+    }
+
+    static func ctcChunkRanges(
+        sampleCount: Int,
+        includeIncompleteTail: Bool
+    ) -> [Range<Int>] {
+        guard sampleCount > 0 else { return [] }
+
+        var ranges: [Range<Int>] = []
+        var start = 0
+        while start < sampleCount {
+            let end = min(start + ctcChunkSampleCount, sampleCount)
+            guard includeIncompleteTail || end - start == ctcChunkSampleCount else { break }
+            ranges.append(start..<end)
+            if end >= sampleCount { break }
+            start += ctcChunkStrideSampleCount
+        }
+        return ranges
+    }
+
+    static func mergeCtcLogProbabilityChunks(
+        _ chunks: [CtcLogProbabilityChunk]
+    ) -> (logProbs: [[Float]], frameDuration: Double) {
+        guard let first = chunks.first, first.frameDuration > 0 else {
+            return ([], 0)
+        }
+
+        let frameDuration = first.frameDuration
+        let overlapFrames = Int(
+            Double(ctcChunkOverlapSampleCount) / 16_000.0 / frameDuration
+        )
+        var merged: [[Float]] = []
+
+        for (index, chunk) in chunks.enumerated() where !chunk.logProbs.isEmpty {
+            if index == 0 {
+                merged.append(contentsOf: chunk.logProbs)
+                continue
+            }
+
+            let overlapCount = min(overlapFrames, merged.count, chunk.logProbs.count)
+            if overlapCount > 0 {
+                let existingStart = merged.count - overlapCount
+                for overlapIndex in 0..<overlapCount {
+                    merged[existingStart + overlapIndex] = mergeCtcOverlapFrame(
+                        existing: merged[existingStart + overlapIndex],
+                        incoming: chunk.logProbs[overlapIndex]
+                    )
+                }
+            }
+            if overlapCount < chunk.logProbs.count {
+                merged.append(contentsOf: chunk.logProbs.suffix(from: overlapCount))
+            }
+        }
+
+        return (merged, frameDuration)
+    }
+
+    private static func mergeCtcOverlapFrame(existing: [Float], incoming: [Float]) -> [Float] {
+        let count = min(existing.count, incoming.count)
+        guard count > 0 else { return existing }
+
+        var averaged = [Float](repeating: 0, count: count)
+        for index in 0..<count {
+            averaged[index] = (existing[index] + incoming[index]) / 2
+        }
+        return averaged
+    }
+
+    private static func inferenceOnlyVocabulary(
+        from vocabulary: CustomVocabularyContext
+    ) -> CustomVocabularyContext {
+        CustomVocabularyContext(
+            terms: Array(vocabulary.terms.prefix(1)),
+            alpha: vocabulary.alpha,
+            minCtcScore: vocabulary.minCtcScore,
+            minSimilarity: vocabulary.minSimilarity,
+            minCombinedConfidence: vocabulary.minCombinedConfidence,
+            minTermLength: vocabulary.minTermLength
+        )
     }
 
     private func configureBoostingIfNeeded(
@@ -476,7 +684,7 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
         let vocab = CustomVocabularyContext(terms: cappedTerms)
         let blankId = ctcModels.vocabulary.count
         let spotter = CtcKeywordSpotter(models: ctcModels, blankId: blankId)
-        let ctcModelDir = CtcModels.defaultCacheDirectory(for: ctcModels.variant)
+        let ctcModelDir = ctcModelDirectory ?? CtcModels.defaultCacheDirectory(for: ctcModels.variant)
         do {
             let rescorer = try await VocabularyRescorer.create(
                 spotter: spotter,
@@ -497,8 +705,14 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
 
     private func applyVocabularyRescoringIfNeeded(
         to result: ASRResult,
-        audioSamples: [Float]
+        audioSamples: [Float],
+        sessionID: UUID?
     ) async -> ASRResult {
+        defer {
+            if let sessionID {
+                discardFinalTranscriptionPrecomputation(sessionID: sessionID)
+            }
+        }
         guard vocabularyBoostingEnabled,
               let spotter = ctcSpotter,
               let rescorer = vocabularyRescorer,
@@ -510,10 +724,67 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
         }
 
         do {
-            let spotResult = try await spotter.spotKeywordsWithLogProbs(
-                audioSamples: audioSamples,
-                customVocabulary: vocab,
-                minScore: nil
+            let ctcStartedAt = ContinuousClock.now
+            let cachedSession = sessionID.flatMap { id -> VocabularyPrecomputationSession? in
+                guard let session = vocabularyPrecomputationSession,
+                      session.id == id,
+                      session.vocabularySignature == lastConfiguredPrompt,
+                      session.modelID == loadedModelId,
+                      !session.chunksByStartSample.isEmpty else {
+                    return nil
+                }
+                return session
+            }
+            let spotResult: CtcKeywordSpotter.SpotKeywordsResult
+            let reusedChunkCount: Int
+            if let cachedSession {
+                let ranges = Self.ctcChunkRanges(
+                    sampleCount: audioSamples.count,
+                    includeIncompleteTail: true
+                )
+                var chunks: [CtcLogProbabilityChunk] = []
+                var reuseCount = 0
+                let inferenceVocabulary = Self.inferenceOnlyVocabulary(from: vocab)
+
+                for range in ranges {
+                    if let cached = cachedSession.chunksByStartSample[range.lowerBound],
+                       cached.endSample == range.upperBound {
+                        chunks.append(cached)
+                        reuseCount += 1
+                        continue
+                    }
+
+                    let computed = try await spotter.spotKeywordsWithLogProbs(
+                        audioSamples: Array(audioSamples[range]),
+                        customVocabulary: inferenceVocabulary,
+                        minScore: nil
+                    )
+                    chunks.append(CtcLogProbabilityChunk(
+                        startSample: range.lowerBound,
+                        endSample: range.upperBound,
+                        logProbs: computed.logProbs,
+                        frameDuration: computed.frameDuration
+                    ))
+                }
+
+                let merged = Self.mergeCtcLogProbabilityChunks(chunks)
+                spotResult = spotter.spotKeywordsFromLogProbs(
+                    logProbs: merged.logProbs,
+                    frameDuration: merged.frameDuration,
+                    customVocabulary: vocab,
+                    minScore: nil
+                )
+                reusedChunkCount = reuseCount
+            } else {
+                spotResult = try await spotter.spotKeywordsWithLogProbs(
+                    audioSamples: audioSamples,
+                    customVocabulary: vocab,
+                    minScore: nil
+                )
+                reusedChunkCount = 0
+            }
+            Self.logger.info(
+                "Vocabulary CTC inference and spotting finished in \(ContinuousClock.now - ctcStartedAt), reusedChunks=\(reusedChunkCount, privacy: .public)"
             )
             guard !spotResult.logProbs.isEmpty else { return result }
 
@@ -565,11 +836,13 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
         vocabSizeConfig = nil
         lastConfiguredPrompt = nil
         lastBoostingTermCount = 0
+        vocabularyPrecomputationSession = nil
     }
 
     private func clearVocabularyBoostingState(resetModelState: Bool = false) {
         clearConfiguredVocabulary()
         ctcModels = nil
+        ctcModelDirectory = nil
         ctcTokenizer = nil
         if resetModelState {
             ctcModelState = .notDownloaded
@@ -578,14 +851,24 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
 
     // MARK: - Model Management
 
-    fileprivate func loadModel() async {
+    func loadModel() async {
         modelState = .downloading
         downloadProgress = 0.1
 
         do {
-            applyHuggingFaceTokenToEnvironment()
-            try await ensureVocabularyAsset(for: selectedVersion)
-            let models = try await AsrModels.downloadAndLoad(version: selectedVersion.asrModelVersion)
+            let models: AsrModels
+            if let bundledDirectory = bundledAsrModelDirectory(for: selectedVersion) {
+                disableFluidAudioNetwork(for: bundledDirectory)
+                try validateBundledAsrModel(at: bundledDirectory, version: selectedVersion)
+                models = try await AsrModels.load(
+                    from: bundledDirectory,
+                    version: selectedVersion.asrModelVersion
+                )
+            } else {
+                applyHuggingFaceTokenToEnvironment()
+                try await ensureVocabularyAsset(for: selectedVersion)
+                models = try await AsrModels.downloadAndLoad(version: selectedVersion.asrModelVersion)
+            }
             downloadProgress = 0.7
 
             let manager = AsrManager(config: .default)
@@ -603,8 +886,9 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
             store.setUserDefault(selectedVersion.rawValue, forKey: "selectedVersion")
 
             if vocabularyBoostingEnabled {
-                let cacheDir = CtcModels.defaultCacheDirectory(for: .ctc110m)
-                if CtcModels.modelsExist(at: cacheDir) {
+                let ctcDirectory = bundledCtcModelDirectory
+                    ?? CtcModels.defaultCacheDirectory(for: .ctc110m)
+                if CtcModels.modelsExist(at: ctcDirectory) {
                     await downloadCtcModel()
                 }
             }
@@ -752,8 +1036,49 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     }
 
     private func isModelDownloaded(version: ParakeetVersion) -> Bool {
+        if let directory = bundledAsrModelDirectory(for: version) {
+            return AsrModels.modelsExist(at: directory, version: version.asrModelVersion)
+        }
         let cacheDir = AsrModels.defaultCacheDirectory(for: version.asrModelVersion)
         return AsrModels.modelsExist(at: cacheDir, version: version.asrModelVersion)
+    }
+
+    private func bundledAsrModelDirectory(for version: ParakeetVersion) -> URL? {
+        guard let root = store.bundledModelsDirectory else { return nil }
+        let folderName = switch version {
+        case .v2: Self.v2BundledFolderName
+        case .v3: Self.v3BundledFolderName
+        }
+        return root.appendingPathComponent(folderName, isDirectory: true)
+    }
+
+    private var bundledCtcModelDirectory: URL? {
+        store.bundledModelsDirectory?.appendingPathComponent(
+            Self.ctcBundledFolderName,
+            isDirectory: true
+        )
+    }
+
+    private func validateBundledAsrModel(at directory: URL, version: ParakeetVersion) throws {
+        guard AsrModels.modelsExist(at: directory, version: version.asrModelVersion) else {
+            throw ParakeetBundledModelError.incomplete(version.modelDef.displayName, directory)
+        }
+    }
+
+    private func validateBundledCtcModel(at directory: URL) throws {
+        guard CtcModels.modelsExist(at: directory),
+              FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("tokenizer.json").path
+              ) else {
+            throw ParakeetBundledModelError.incomplete("Parakeet CTC 110M", directory)
+        }
+    }
+
+    private func disableFluidAudioNetwork(for bundledDirectory: URL) {
+        // The offline edition must never fall back to Hugging Face if a packaged
+        // Core ML bundle is damaged. Point FluidAudio's model registry at the
+        // local, read-only bundle before invoking any of its loaders.
+        ModelRegistry.baseURL = bundledDirectory.absoluteString
     }
 
     // MARK: - Settings View
@@ -764,7 +1089,7 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
             break
         case .downloading:
             return ParakeetSettingsActivity(
-                message: "Downloading model",
+                message: isOfflineDistribution ? "Loading included model" : "Downloading model",
                 progress: downloadProgress
             )
         case .error(let message):
@@ -777,7 +1102,11 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
         case .notDownloaded, .ready:
             return nil
         case .downloading:
-            return ParakeetSettingsActivity(message: "Downloading vocabulary model")
+            return ParakeetSettingsActivity(
+                message: isOfflineDistribution
+                    ? "Loading included vocabulary model"
+                    : "Downloading vocabulary model"
+            )
         case .error(let message):
             return ParakeetSettingsActivity(message: message, isError: true)
         }
@@ -869,6 +1198,8 @@ extension ParakeetEngineImplementation {
             language: request.language,
             prompt: request.prompt,
             dictionaryTermHints: request.dictionaryTermHints,
+            purpose: request.purpose,
+            sessionID: request.sessionID,
             onProgress: request.onTextProgress,
             onSourceProgress: { progress in
                 request.onSourceProgress(TranscriptionSourceProgress(
@@ -900,14 +1231,14 @@ enum ParakeetVersion: String, CaseIterable {
             return ParakeetModelDef(
                 id: "parakeet-tdt-0.6b-v2",
                 displayName: "Parakeet TDT v2",
-                sizeDescription: "~600 MB",
+                sizeDescription: "~440 MB",
                 ramRequirement: "8 GB+"
             )
         case .v3:
             return ParakeetModelDef(
                 id: "parakeet-tdt-0.6b-v3",
                 displayName: "Parakeet TDT v3",
-                sizeDescription: "~600 MB",
+                sizeDescription: "~460 MB",
                 ramRequirement: "8 GB+"
             )
         }
@@ -925,9 +1256,9 @@ enum ParakeetVersion: String, CaseIterable {
     func settingsDescription(bundle: Bundle) -> String {
         switch self {
         case .v2:
-            return String(localized: "NVIDIA Parakeet TDT V2 - extremely fast on Apple Silicon. English only, highest recall. No API key required.", bundle: bundle)
+            return String(localized: "Best for English-only dictation. V2 generally has higher English recall. Choose V3 if you dictate in another language.", bundle: bundle)
         case .v3:
-            return String(localized: "NVIDIA Parakeet TDT - extremely fast on Apple Silicon. 25 European languages, no API key required.", bundle: bundle)
+            return String(localized: "Recommended for most users. V3 supports 25 European languages, including English and German. Choose V2 only for English-only dictation.", bundle: bundle)
         }
     }
 
@@ -988,6 +1319,17 @@ private enum ParakeetVocabularyAssetError: LocalizedError {
     }
 }
 
+private enum ParakeetBundledModelError: LocalizedError {
+    case incomplete(String, URL)
+
+    var errorDescription: String? {
+        switch self {
+        case .incomplete(let modelName, let directory):
+            return "The offline edition is missing required files for \(modelName) at \(directory.path). Reinstall the offline edition."
+        }
+    }
+}
+
 // MARK: - Settings View
 
 private struct ParakeetSettingsView: View {
@@ -1026,75 +1368,81 @@ private struct ParakeetSettingsView: View {
                 Text("Parakeet")
                     .font(.headline)
 
-                Text(selectedVersion.settingsDescription(bundle: bundle))
+                Text(
+                    engine.isOfflineDistribution
+                        ? String(localized: "Offline edition: both transcription models and the vocabulary model are included. No model downloads or API key are required.", bundle: bundle)
+                        : String(localized: "Both models run locally with similar speed, download size, and memory use. No API key is required.", bundle: bundle)
+                )
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
-                Divider()
+                if !engine.isOfflineDistribution {
+                    Divider()
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Hugging Face Token", bundle: bundle)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Hugging Face Token", bundle: bundle)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
 
-                    Text("Optional. Increases download rate limits. Free at huggingface.co/settings/tokens", bundle: bundle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    HStack {
-                        if showHfToken {
-                            TextField("hf_...", text: $hfTokenInput)
-                                .textFieldStyle(.roundedBorder)
-                        } else {
-                            SecureField("hf_...", text: $hfTokenInput)
-                                .textFieldStyle(.roundedBorder)
-                        }
-
-                        Button {
-                            showHfToken.toggle()
-                        } label: {
-                            Image(systemName: showHfToken ? "eye.slash" : "eye")
-                        }
-                        .buttonStyle(.borderless)
-
-                        if hasStoredHfToken {
-                            Button(String(localized: "Remove", bundle: bundle)) {
-                                hfTokenInput = ""
-                                tokenValidationResult = nil
-                                isValidatingToken = false
-                                engine.clearHuggingFaceToken()
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-
-                        Button(String(localized: "Save", bundle: bundle)) {
-                            validateAndSaveHuggingFaceToken()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .disabled(trimmedHfTokenInput.isEmpty || isValidatingToken)
-                    }
-
-                    if isValidatingToken {
-                        HStack(spacing: 4) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Validating token...", bundle: bundle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else if let tokenValidationResult {
-                        HStack(spacing: 4) {
-                            Image(systemName: tokenValidationResult ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(tokenValidationResult ? .green : .red)
-                            Text(
-                                tokenValidationResult
-                                    ? String(localized: "Valid Hugging Face Token", bundle: bundle)
-                                    : String(localized: "Invalid Hugging Face Token", bundle: bundle)
-                            )
+                        Text("Optional. Increases download rate limits. Free at huggingface.co/settings/tokens", bundle: bundle)
                             .font(.caption)
-                            .foregroundStyle(tokenValidationResult ? .green : .red)
+                            .foregroundStyle(.secondary)
+
+                        HStack {
+                            if showHfToken {
+                                TextField("hf_...", text: $hfTokenInput)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("hf_...", text: $hfTokenInput)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            Button {
+                                showHfToken.toggle()
+                            } label: {
+                                Image(systemName: showHfToken ? "eye.slash" : "eye")
+                            }
+                            .buttonStyle(.borderless)
+
+                            if hasStoredHfToken {
+                                Button(String(localized: "Remove", bundle: bundle)) {
+                                    hfTokenInput = ""
+                                    tokenValidationResult = nil
+                                    isValidatingToken = false
+                                    engine.clearHuggingFaceToken()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+
+                            Button(String(localized: "Save", bundle: bundle)) {
+                                validateAndSaveHuggingFaceToken()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .disabled(trimmedHfTokenInput.isEmpty || isValidatingToken)
+                        }
+
+                        if isValidatingToken {
+                            HStack(spacing: 4) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Validating token...", bundle: bundle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else if let tokenValidationResult {
+                            HStack(spacing: 4) {
+                                Image(systemName: tokenValidationResult ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundStyle(tokenValidationResult ? .green : .red)
+                                Text(
+                                    tokenValidationResult
+                                        ? String(localized: "Valid Hugging Face Token", bundle: bundle)
+                                        : String(localized: "Invalid Hugging Face Token", bundle: bundle)
+                                )
+                                .font(.caption)
+                                .foregroundStyle(tokenValidationResult ? .green : .red)
+                            }
                         }
                     }
                 }
@@ -1124,13 +1472,21 @@ private struct ParakeetSettingsView: View {
                         Text("\(selectedVersion.modelDef.sizeDescription) - RAM: \(selectedVersion.modelDef.ramRequirement)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        Text(selectedVersion.settingsDescription(bundle: bundle))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer()
 
                     switch modelState {
                     case .notLoaded:
-                        Button(String(localized: "Download & Load", bundle: bundle)) {
+                        Button(
+                            engine.isOfflineDistribution
+                                ? String(localized: "Load", bundle: bundle)
+                                : String(localized: "Download & Load", bundle: bundle)
+                        ) {
                             modelState = .downloading
                             downloadProgress = 0.05
                             isPolling = true
@@ -1279,6 +1635,11 @@ private struct ParakeetSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            Text("Runs a second local speech model to detect dictionary terms. This can improve names and technical vocabulary, but uses more processing time on long dictations. Leise prepares completed audio windows while you speak to reduce the wait after stopping.", bundle: bundle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             Toggle(isOn: $boostingEnabled) {
                 Text("Enable Vocabulary Boosting", bundle: bundle)
             }
@@ -1291,13 +1652,21 @@ private struct ParakeetSettingsView: View {
                 HStack(spacing: 6) {
                     switch ctcModelState {
                     case .notDownloaded:
-                        Image(systemName: "arrow.down.circle")
+                        Image(systemName: engine.isOfflineDistribution ? "shippingbox.fill" : "arrow.down.circle")
                             .foregroundStyle(.secondary)
                             .font(.caption)
-                        Text("CTC model (~100 MB) - downloads automatically on first use, or:", bundle: bundle)
+                        Text(
+                            engine.isOfflineDistribution
+                                ? String(localized: "CTC model included - loads automatically on first use, or:", bundle: bundle)
+                                : String(localized: "CTC model (~100 MB) - downloads automatically on first use, or:", bundle: bundle)
+                        )
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Button(String(localized: "Download Now", bundle: bundle)) {
+                        Button(
+                            engine.isOfflineDistribution
+                                ? String(localized: "Load Now", bundle: bundle)
+                                : String(localized: "Download Now", bundle: bundle)
+                        ) {
                             isPolling = true
                             Task {
                                 await engine.downloadCtcModel()
@@ -1311,7 +1680,11 @@ private struct ParakeetSettingsView: View {
                     case .downloading:
                         ProgressView()
                             .controlSize(.small)
-                        Text("Downloading CTC model...", bundle: bundle)
+                        Text(
+                            engine.isOfflineDistribution
+                                ? String(localized: "Loading included CTC model...", bundle: bundle)
+                                : String(localized: "Downloading CTC model...", bundle: bundle)
+                        )
                             .font(.caption)
                             .foregroundStyle(.secondary)
 

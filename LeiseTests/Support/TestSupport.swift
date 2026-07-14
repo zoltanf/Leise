@@ -157,6 +157,7 @@ final class TestTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
     var selectedModelID: String?
     var capabilities: TranscriptionCapabilities
     var isReady: Bool
+    var allowsFinalTranscriptionPrecomputation: Bool
     var preparationStatus: ModelPreparationStatus { isReady ? .ready : .idle }
     var stateDidChange: AnyPublisher<Void, Never> { stateSubject.eraseToAnyPublisher() }
 
@@ -167,6 +168,8 @@ final class TestTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
     private(set) var prepareCallCount = 0
     private(set) var prepareAllowDownloadsHistory: [Bool] = []
     private(set) var unloadCallCount = 0
+    private(set) var precomputationRequests: [TranscriptionPrecomputationRequest] = []
+    private(set) var discardedPrecomputationSessionIDs: [UUID] = []
 
     init(
         id: String = "parakeet",
@@ -182,6 +185,7 @@ final class TestTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
             dictionaryHints: .available
         ),
         isReady: Bool = true,
+        allowsFinalTranscriptionPrecomputation: Bool = false,
         handler: @escaping Handler = { _ in EngineTranscriptionResult(text: "mock transcription") }
     ) {
         self.id = id
@@ -190,6 +194,7 @@ final class TestTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
         self.selectedModelID = selectedModelID
         self.capabilities = capabilities
         self.isReady = isReady
+        self.allowsFinalTranscriptionPrecomputation = allowsFinalTranscriptionPrecomputation
         self.handler = handler
     }
 
@@ -210,6 +215,18 @@ final class TestTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
     func transcribe(_ request: TranscriptionRequest) async throws -> EngineTranscriptionResult {
         requests.append(request)
         return try await handler(request)
+    }
+
+    func shouldPrecomputeFinalTranscription(dictionaryTermHints: [DictionaryTermHint]) -> Bool {
+        allowsFinalTranscriptionPrecomputation && !dictionaryTermHints.isEmpty
+    }
+
+    func precomputeFinalTranscription(_ request: TranscriptionPrecomputationRequest) async {
+        precomputationRequests.append(request)
+    }
+
+    func discardFinalTranscriptionPrecomputation(sessionID: UUID) {
+        discardedPrecomputationSessionIDs.append(sessionID)
     }
 
     func unloadModel(clearPersistence _: Bool) {

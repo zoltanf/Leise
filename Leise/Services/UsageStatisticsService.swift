@@ -8,22 +8,108 @@ private let usageStatisticsLogger = Logger(
     category: "UsageStatisticsService"
 )
 
-@MainActor
-protocol UsageStatisticsRecording: AnyObject {
-    func recordTranscription(
-        timestamp: Date,
-        wordsCount: Int,
-        durationSeconds: Double,
-        appBundleIdentifier: String?
-    )
+struct UsageTranscriptionSample: Sendable {
+    let timestamp: Date
+    let wordsCount: Int
+    let durationSeconds: Double
+    let appName: String?
+    let appBundleIdentifier: String?
+    let appDomain: String?
+    let language: String?
+    let engine: String?
+    let model: String?
+    let rawText: String?
+    let processedText: String?
+    let pipelineSteps: [String]
+    let manualEditCount: Int
+    let manualChangedWordCount: Int
+    let manualCorrections: [UsageCorrectionAggregate]
 }
 
-struct UsageStatisticsDaySnapshot: Equatable {
+@MainActor
+protocol UsageStatisticsRecording: AnyObject {
+    func recordTranscription(_ sample: UsageTranscriptionSample)
+}
+
+extension UsageStatisticsRecording {
+    func recordTranscription(
+        timestamp: Date = Date(),
+        wordsCount: Int,
+        durationSeconds: Double,
+        appName: String? = nil,
+        appBundleIdentifier: String?,
+        appDomain: String? = nil,
+        language: String? = nil,
+        engine: String? = nil,
+        model: String? = nil,
+        rawText: String? = nil,
+        processedText: String? = nil,
+        pipelineSteps: [String] = []
+    ) {
+        recordTranscription(UsageTranscriptionSample(
+            timestamp: timestamp,
+            wordsCount: wordsCount,
+            durationSeconds: durationSeconds,
+            appName: appName,
+            appBundleIdentifier: appBundleIdentifier,
+            appDomain: appDomain,
+            language: language,
+            engine: engine,
+            model: model,
+            rawText: rawText,
+            processedText: processedText,
+            pipelineSteps: pipelineSteps,
+            manualEditCount: 0,
+            manualChangedWordCount: 0,
+            manualCorrections: []
+        ))
+    }
+}
+
+struct UsageStatisticsDaySnapshot: Equatable, Sendable {
     let day: Date
     let transcriptionCount: Int
     let totalWords: Int
     let totalDurationSeconds: Double
     let appBundleIdentifiers: Set<String>
+    let appUsage: [String: UsageCategoryAggregate]
+    let domainUsage: [String: UsageCategoryAggregate]
+    let languageUsage: [String: UsageCategoryAggregate]
+    let engineUsage: [String: UsageCategoryAggregate]
+    let pipelineStepUsage: [String: Int]
+    let hourlyUsage: [String: Int]
+    let durationBucketUsage: [String: Int]
+    let correctionUsage: [String: UsageCorrectionAggregate]
+    let postProcessedCount: Int
+    let changedWordCount: Int
+    let manualCorrectionCount: Int
+    let correctedDictationCount: Int
+    let manuallyChangedWordCount: Int
+    let dictionaryCorrectionDictationCount: Int
+
+    static func empty(day: Date) -> UsageStatisticsDaySnapshot {
+        UsageStatisticsDaySnapshot(
+            day: day,
+            transcriptionCount: 0,
+            totalWords: 0,
+            totalDurationSeconds: 0,
+            appBundleIdentifiers: [],
+            appUsage: [:],
+            domainUsage: [:],
+            languageUsage: [:],
+            engineUsage: [:],
+            pipelineStepUsage: [:],
+            hourlyUsage: [:],
+            durationBucketUsage: [:],
+            correctionUsage: [:],
+            postProcessedCount: 0,
+            changedWordCount: 0,
+            manualCorrectionCount: 0,
+            correctedDictationCount: 0,
+            manuallyChangedWordCount: 0,
+            dictionaryCorrectionDictationCount: 0
+        )
+    }
 }
 
 struct UsageStatisticsSummary: Equatable {
@@ -31,12 +117,40 @@ struct UsageStatisticsSummary: Equatable {
     let words: Int
     let durationSeconds: Double
     let appBundleIdentifiers: Set<String>
+    let appUsage: [String: UsageCategoryAggregate]
+    let domainUsage: [String: UsageCategoryAggregate]
+    let languageUsage: [String: UsageCategoryAggregate]
+    let engineUsage: [String: UsageCategoryAggregate]
+    let pipelineStepUsage: [String: Int]
+    let hourlyUsage: [String: Int]
+    let durationBucketUsage: [String: Int]
+    let correctionUsage: [String: UsageCorrectionAggregate]
+    let postProcessedCount: Int
+    let changedWordCount: Int
+    let manualCorrectionCount: Int
+    let correctedDictationCount: Int
+    let manuallyChangedWordCount: Int
+    let dictionaryCorrectionDictationCount: Int
 
     static let empty = UsageStatisticsSummary(
         transcriptionCount: 0,
         words: 0,
         durationSeconds: 0,
-        appBundleIdentifiers: []
+        appBundleIdentifiers: [],
+        appUsage: [:],
+        domainUsage: [:],
+        languageUsage: [:],
+        engineUsage: [:],
+        pipelineStepUsage: [:],
+        hourlyUsage: [:],
+        durationBucketUsage: [:],
+        correctionUsage: [:],
+        postProcessedCount: 0,
+        changedWordCount: 0,
+        manualCorrectionCount: 0,
+        correctedDictationCount: 0,
+        manuallyChangedWordCount: 0,
+        dictionaryCorrectionDictationCount: 0
     )
 
     var rawWPM: Double {
@@ -52,25 +166,12 @@ struct UsageStatisticsSummary: Equatable {
     var appCount: Int { appBundleIdentifiers.count }
 }
 
-private struct UsageBackfillSample: Sendable {
-    let timestamp: Date
-    let wordsCount: Int
-    let durationSeconds: Double
-    let appBundleIdentifier: String?
-}
-
-private struct UsageBackfillAggregate: Sendable {
-    var transcriptionCount = 0
-    var totalWords = 0
-    var totalDurationSeconds: Double = 0
-    var appBundleIdentifiers: Set<String> = []
-}
-
 @MainActor
 final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
     @Published private(set) var days: [UsageStatisticsDaySnapshot] = []
 
     private static let historyBackfillCompletedKey = "historyBackfillCompleted"
+    private static let historyDetailBackfillCompletedKey = "historyDetailBackfillCompletedV2"
 
     private let modelContainer: ModelContainer
     private let modelContext: ModelContext
@@ -98,35 +199,31 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
     }
 
     var hasAnyStatistics: Bool {
-        days.contains { $0.transcriptionCount > 0 || $0.totalWords > 0 || $0.totalDurationSeconds > 0 }
+        days.contains {
+            $0.transcriptionCount > 0 || $0.totalWords > 0 || $0.totalDurationSeconds > 0
+                || $0.manualCorrectionCount > 0
+        }
     }
 
-    /// Reads only the metadata row; callers can avoid touching history entirely
-    /// after the one-time migration has completed.
-    var needsHistoryBackfill: Bool { !historyBackfillCompleted }
+    /// The detail migration enriches retained history without duplicating the
+    /// existing all-time word and duration aggregates.
+    var needsHistoryBackfill: Bool {
+        !historyBackfillCompleted || !historyDetailBackfillCompleted
+    }
 
-    func recordTranscription(
-        timestamp: Date = Date(),
-        wordsCount: Int,
-        durationSeconds: Double,
-        appBundleIdentifier: String?
-    ) {
-        guard wordsCount > 0 else {
+    func recordTranscription(_ sample: UsageTranscriptionSample) {
+        guard sample.wordsCount > 0 else {
             usageStatisticsLogger.warning("Skipping usage statistics entry: empty word count")
             return
         }
-        guard durationSeconds.isFinite, durationSeconds >= 0 else {
-            usageStatisticsLogger.warning("Skipping usage statistics entry: invalid duration \(durationSeconds)")
+        guard sample.durationSeconds.isFinite, sample.durationSeconds >= 0 else {
+            usageStatisticsLogger.warning("Skipping usage statistics entry: invalid duration \(sample.durationSeconds)")
             return
         }
 
         do {
-            try upsertDay(
-                timestamp: timestamp,
-                wordsCount: wordsCount,
-                durationSeconds: durationSeconds,
-                appBundleIdentifier: appBundleIdentifier
-            )
+            let statisticsDay = try statisticsDay(for: sample.timestamp)
+            apply(sample, to: statisticsDay, includeTotals: true, includeDetails: true)
             save()
             fetchDays()
         } catch {
@@ -134,27 +231,55 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
         }
     }
 
+    func recordManualCorrection(
+        timestamp: Date,
+        isFirstCorrectionForDictation: Bool,
+        changedWordCount: Int,
+        suggestions: [CorrectionSuggestion]
+    ) {
+        do {
+            let statisticsDay = try statisticsDay(for: timestamp)
+            statisticsDay.manualCorrectionCount += 1
+            if isFirstCorrectionForDictation {
+                statisticsDay.correctedDictationCount += 1
+            }
+            statisticsDay.manuallyChangedWordCount += max(changedWordCount, 0)
+
+            var corrections = statisticsDay.correctionUsage
+            for suggestion in suggestions {
+                let original = suggestion.original.trimmingCharacters(in: .whitespacesAndNewlines)
+                let replacement = suggestion.replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !original.isEmpty, !replacement.isEmpty else { continue }
+                let key = "\(original.lowercased())\u{1F}\(replacement.lowercased())"
+                var aggregate = corrections[key] ?? UsageCorrectionAggregate(
+                    original: original,
+                    replacement: replacement,
+                    count: 0
+                )
+                aggregate.count += 1
+                corrections[key] = aggregate
+            }
+            statisticsDay.correctionUsage = corrections
+            save()
+            fetchDays()
+        } catch {
+            usageStatisticsLogger.error("Failed to record manual correction: \(error.localizedDescription)")
+        }
+    }
+
     func backfillFromHistoryIfNeeded(_ records: [TranscriptionRecord]) {
-        guard !historyBackfillCompleted else { return }
+        guard needsHistoryBackfill else { return }
+        let includeTotals = !historyBackfillCompleted
+        let includeDetails = !historyDetailBackfillCompleted
 
         do {
             for record in records {
-                let wordsCount = record.wordsCount > 0
-                    ? record.wordsCount
-                    : record.finalText.split(separator: " ").count
-                guard wordsCount > 0,
-                      record.durationSeconds.isFinite,
-                      record.durationSeconds >= 0 else {
-                    continue
-                }
-                try upsertDay(
-                    timestamp: record.timestamp,
-                    wordsCount: wordsCount,
-                    durationSeconds: record.durationSeconds,
-                    appBundleIdentifier: record.appBundleIdentifier
-                )
+                guard let sample = Self.sample(from: record) else { continue }
+                let statisticsDay = try statisticsDay(for: sample.timestamp)
+                apply(sample, to: statisticsDay, includeTotals: includeTotals, includeDetails: includeDetails)
             }
             try setHistoryBackfillCompleted(true)
+            try setHistoryDetailBackfillCompleted(true)
             save()
             fetchDays()
         } catch {
@@ -166,44 +291,20 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
         _ records: [TranscriptionRecord],
         batchSize: Int = 250
     ) async {
-        guard !historyBackfillCompleted else { return }
-
-        let samples = records.compactMap { record -> UsageBackfillSample? in
-            let wordsCount = record.wordsCount > 0
-                ? record.wordsCount
-                : record.finalText.split(separator: " ").count
-            guard wordsCount > 0,
-                  record.durationSeconds.isFinite,
-                  record.durationSeconds >= 0 else {
-                return nil
-            }
-            return UsageBackfillSample(
-                timestamp: record.timestamp,
-                wordsCount: wordsCount,
-                durationSeconds: record.durationSeconds,
-                appBundleIdentifier: record.appBundleIdentifier
-            )
-        }
+        guard needsHistoryBackfill else { return }
+        let includeTotals = !historyBackfillCompleted
+        let includeDetails = !historyDetailBackfillCompleted
+        let samples = records.compactMap(Self.sample(from:))
         let calendar = calendar
         let boundedBatchSize = max(batchSize, 1)
 
-        let aggregates = await Task.detached(priority: .utility) {
-            var result: [Date: UsageBackfillAggregate] = [:]
+        let groupedSamples = await Task.detached(priority: .utility) {
+            var result: [Date: [UsageTranscriptionSample]] = [:]
             for start in stride(from: 0, to: samples.count, by: boundedBatchSize) {
-                guard !Task.isCancelled else { return [Date: UsageBackfillAggregate]() }
+                guard !Task.isCancelled else { return [Date: [UsageTranscriptionSample]]() }
                 let end = min(start + boundedBatchSize, samples.count)
                 for sample in samples[start..<end] {
-                    let day = calendar.startOfDay(for: sample.timestamp)
-                    var aggregate = result[day] ?? UsageBackfillAggregate()
-                    aggregate.transcriptionCount += 1
-                    aggregate.totalWords += sample.wordsCount
-                    aggregate.totalDurationSeconds += sample.durationSeconds
-                    if let identifier = sample.appBundleIdentifier?
-                        .trimmingCharacters(in: .whitespacesAndNewlines),
-                       !identifier.isEmpty {
-                        aggregate.appBundleIdentifiers.insert(identifier)
-                    }
-                    result[day] = aggregate
+                    result[calendar.startOfDay(for: sample.timestamp), default: []].append(sample)
                 }
             }
             return result
@@ -212,18 +313,14 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
         guard !Task.isCancelled else { return }
 
         do {
-            for (day, aggregate) in aggregates {
-                let statisticsDay = try findDay(day) ?? {
-                    let value = UsageStatisticsDay(day: day)
-                    modelContext.insert(value)
-                    return value
-                }()
-                statisticsDay.transcriptionCount += aggregate.transcriptionCount
-                statisticsDay.totalWords += aggregate.totalWords
-                statisticsDay.totalDurationSeconds += aggregate.totalDurationSeconds
-                statisticsDay.appBundleIdentifiers.formUnion(aggregate.appBundleIdentifiers)
+            for (day, samples) in groupedSamples {
+                let statisticsDay = try statisticsDay(for: day)
+                for sample in samples {
+                    apply(sample, to: statisticsDay, includeTotals: includeTotals, includeDetails: includeDetails)
+                }
             }
             try setHistoryBackfillCompleted(true)
+            try setHistoryDetailBackfillCompleted(true)
             try modelContext.save()
             fetchDays()
         } catch {
@@ -235,7 +332,6 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
     func summary(from start: Date?, to end: Date = Date()) -> UsageStatisticsSummary {
         let startDay = start.map { calendar.startOfDay(for: $0) }
         let endDay = calendar.startOfDay(for: end)
-
         return summarize(days.filter { snapshot in
             if let startDay, snapshot.day < startDay { return false }
             return snapshot.day <= endDay
@@ -243,8 +339,12 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
     }
 
     func summary(startDay: Date, endDayExclusive: Date) -> UsageStatisticsSummary {
+        summarize(snapshots(startDay: startDay, endDayExclusive: endDayExclusive))
+    }
+
+    func snapshots(startDay: Date, endDayExclusive: Date) -> [UsageStatisticsDaySnapshot] {
         let normalizedStart = calendar.startOfDay(for: startDay)
-        return summarize(days.filter { $0.day >= normalizedStart && $0.day < endDayExclusive })
+        return days.filter { $0.day >= normalizedStart && $0.day < endDayExclusive }
     }
 
     func dailyWordCounts(days count: Int?, endingAt now: Date = Date()) -> [UsageStatisticsDaySnapshot] {
@@ -260,16 +360,8 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
 
         let byDay = Dictionary(uniqueKeysWithValues: days.map { ($0.day, $0) })
         return (0..<requestedDays).reversed().compactMap { offset in
-            guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else {
-                return nil
-            }
-            return byDay[day] ?? UsageStatisticsDaySnapshot(
-                day: day,
-                transcriptionCount: 0,
-                totalWords: 0,
-                totalDurationSeconds: 0,
-                appBundleIdentifiers: []
-            )
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { return nil }
+            return byDay[day] ?? .empty(day: day)
         }
     }
 
@@ -288,6 +380,7 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
                 modelContext.delete(day)
             }
             try setHistoryBackfillCompleted(true)
+            try setHistoryDetailBackfillCompleted(true)
             save()
             fetchDays()
         } catch {
@@ -302,23 +395,13 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
             }
 
             for record in records {
-                let wordsCount = record.wordsCount > 0
-                    ? record.wordsCount
-                    : record.finalText.split(separator: " ").count
-                guard wordsCount > 0,
-                      record.durationSeconds.isFinite,
-                      record.durationSeconds >= 0 else {
-                    continue
-                }
-                try upsertDay(
-                    timestamp: record.timestamp,
-                    wordsCount: wordsCount,
-                    durationSeconds: record.durationSeconds,
-                    appBundleIdentifier: record.appBundleIdentifier
-                )
+                guard let sample = Self.sample(from: record) else { continue }
+                let statisticsDay = try statisticsDay(for: sample.timestamp)
+                apply(sample, to: statisticsDay, includeTotals: true, includeDetails: true)
             }
 
             try setHistoryBackfillCompleted(true)
+            try setHistoryDetailBackfillCompleted(true)
             try modelContext.save()
             fetchDays()
         } catch {
@@ -338,35 +421,171 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
     }
     #endif
 
-    private var historyBackfillCompleted: Bool {
-        do {
-            return try metadataValue(for: Self.historyBackfillCompletedKey) == "true"
-        } catch {
-            usageStatisticsLogger.error("Failed to read usage statistics metadata: \(error.localizedDescription)")
-            return true
+    nonisolated static func changedWordCount(original: String, edited: String) -> Int {
+        let originalWords = original.split(whereSeparator: \.isWhitespace).map(String.init)
+        let editedWords = edited.split(whereSeparator: \.isWhitespace).map(String.init)
+        let difference = editedWords.difference(from: originalWords)
+        var removals = 0
+        var insertions = 0
+        for change in difference {
+            switch change {
+            case .remove: removals += 1
+            case .insert: insertions += 1
+            }
+        }
+        return max(removals, insertions)
+    }
+
+    private static func sample(from record: TranscriptionRecord) -> UsageTranscriptionSample? {
+        let wordsCount = record.wordsCount > 0
+            ? record.wordsCount
+            : record.finalText.split(separator: " ").count
+        guard wordsCount > 0,
+              record.durationSeconds.isFinite,
+              record.durationSeconds >= 0 else {
+            return nil
+        }
+        let manualCorrections: [UsageCorrectionAggregate]
+        if record.manualEditCount > 0 {
+            manualCorrections = TextDiffService().extractCorrections(
+                original: record.initialFinalText ?? record.finalText,
+                edited: record.finalText
+            ).map {
+                UsageCorrectionAggregate(original: $0.original, replacement: $0.replacement, count: 1)
+            }
+        } else {
+            manualCorrections = []
+        }
+
+        return UsageTranscriptionSample(
+            timestamp: record.timestamp,
+            wordsCount: wordsCount,
+            durationSeconds: record.durationSeconds,
+            appName: record.appName,
+            appBundleIdentifier: record.appBundleIdentifier,
+            appDomain: record.appDomain,
+            language: record.language,
+            engine: record.engineUsed,
+            model: record.modelUsed,
+            rawText: record.rawText,
+            processedText: record.initialFinalText ?? record.finalText,
+            pipelineSteps: record.pipelineStepList,
+            manualEditCount: record.manualEditCount,
+            manualChangedWordCount: record.manualChangedWordCount,
+            manualCorrections: manualCorrections
+        )
+    }
+
+    private func apply(
+        _ sample: UsageTranscriptionSample,
+        to statisticsDay: UsageStatisticsDay,
+        includeTotals: Bool,
+        includeDetails: Bool
+    ) {
+        if includeTotals {
+            statisticsDay.add(
+                wordsCount: sample.wordsCount,
+                durationSeconds: sample.durationSeconds,
+                appBundleIdentifier: sample.appBundleIdentifier
+            )
+        }
+
+        guard includeDetails else { return }
+
+        if let bundleIdentifier = normalized(sample.appBundleIdentifier) {
+            addCategory(
+                key: bundleIdentifier,
+                label: normalized(sample.appName) ?? bundleIdentifier,
+                words: sample.wordsCount,
+                durationSeconds: sample.durationSeconds,
+                to: &statisticsDay.appUsage
+            )
+        }
+        if let domain = normalizedDomain(sample.appDomain) {
+            addCategory(
+                key: domain.lowercased(),
+                label: domain,
+                words: sample.wordsCount,
+                durationSeconds: sample.durationSeconds,
+                to: &statisticsDay.domainUsage
+            )
+        }
+        if let language = normalized(sample.language) {
+            addCategory(
+                key: language.lowercased(),
+                label: language,
+                words: sample.wordsCount,
+                durationSeconds: sample.durationSeconds,
+                to: &statisticsDay.languageUsage
+            )
+        }
+        if let engine = normalized(sample.engine) {
+            let model = normalized(sample.model)
+            addCategory(
+                key: "\(engine.lowercased())::\((model ?? "").lowercased())",
+                label: model ?? engine,
+                words: sample.wordsCount,
+                durationSeconds: sample.durationSeconds,
+                to: &statisticsDay.engineUsage
+            )
+        }
+
+        var steps = statisticsDay.pipelineStepUsage
+        for step in Set(sample.pipelineSteps.compactMap(normalized)) {
+            steps[step, default: 0] += 1
+        }
+        statisticsDay.pipelineStepUsage = steps
+        if sample.pipelineSteps.contains(where: { $0.caseInsensitiveCompare("Corrections") == .orderedSame }) {
+            statisticsDay.dictionaryCorrectionDictationCount += 1
+        }
+
+        var hours = statisticsDay.hourlyUsage
+        hours[String(calendar.component(.hour, from: sample.timestamp)), default: 0] += 1
+        statisticsDay.hourlyUsage = hours
+
+        var durations = statisticsDay.durationBucketUsage
+        durations[Self.durationBucket(for: sample.durationSeconds), default: 0] += 1
+        statisticsDay.durationBucketUsage = durations
+
+        if let rawText = sample.rawText,
+           let processedText = sample.processedText,
+           rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+            != processedText.trimmingCharacters(in: .whitespacesAndNewlines) {
+            statisticsDay.postProcessedCount += 1
+            statisticsDay.changedWordCount += Self.changedWordCount(original: rawText, edited: processedText)
+        }
+
+        if sample.manualEditCount > 0 {
+            statisticsDay.manualCorrectionCount += sample.manualEditCount
+            statisticsDay.correctedDictationCount += 1
+            statisticsDay.manuallyChangedWordCount += sample.manualChangedWordCount
+
+            var corrections = statisticsDay.correctionUsage
+            for value in sample.manualCorrections {
+                let key = "\(value.original.lowercased())\u{1F}\(value.replacement.lowercased())"
+                var aggregate = corrections[key] ?? UsageCorrectionAggregate(
+                    original: value.original,
+                    replacement: value.replacement,
+                    count: 0
+                )
+                aggregate.count += value.count
+                corrections[key] = aggregate
+            }
+            statisticsDay.correctionUsage = corrections
         }
     }
 
-    private func upsertDay(
-        timestamp: Date,
-        wordsCount: Int,
+    private func addCategory(
+        key: String,
+        label: String,
+        words: Int,
         durationSeconds: Double,
-        appBundleIdentifier: String?
-    ) throws {
-        let dayStart = calendar.startOfDay(for: timestamp)
-        let statisticsDay: UsageStatisticsDay
-        if let existingDay = try findDay(dayStart) {
-            statisticsDay = existingDay
-        } else {
-            let day = UsageStatisticsDay(day: dayStart)
-            modelContext.insert(day)
-            statisticsDay = day
-        }
-        statisticsDay.add(
-            wordsCount: wordsCount,
-            durationSeconds: durationSeconds,
-            appBundleIdentifier: appBundleIdentifier
-        )
+        to dictionary: inout [String: UsageCategoryAggregate]
+    ) {
+        var aggregate = dictionary[key] ?? UsageCategoryAggregate(label: label)
+        aggregate.label = label
+        aggregate.add(words: words, durationSeconds: durationSeconds)
+        dictionary[key] = aggregate
     }
 
     private func summarize(_ snapshots: [UsageStatisticsDaySnapshot]) -> UsageStatisticsSummary {
@@ -375,14 +594,108 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
                 transcriptionCount: partial.transcriptionCount + snapshot.transcriptionCount,
                 words: partial.words + snapshot.totalWords,
                 durationSeconds: partial.durationSeconds + snapshot.totalDurationSeconds,
-                appBundleIdentifiers: partial.appBundleIdentifiers.union(snapshot.appBundleIdentifiers)
+                appBundleIdentifiers: partial.appBundleIdentifiers.union(snapshot.appBundleIdentifiers),
+                appUsage: mergeCategories(partial.appUsage, snapshot.appUsage),
+                domainUsage: mergeCategories(partial.domainUsage, snapshot.domainUsage),
+                languageUsage: mergeCategories(partial.languageUsage, snapshot.languageUsage),
+                engineUsage: mergeCategories(partial.engineUsage, snapshot.engineUsage),
+                pipelineStepUsage: mergeCounts(partial.pipelineStepUsage, snapshot.pipelineStepUsage),
+                hourlyUsage: mergeCounts(partial.hourlyUsage, snapshot.hourlyUsage),
+                durationBucketUsage: mergeCounts(partial.durationBucketUsage, snapshot.durationBucketUsage),
+                correctionUsage: mergeCorrections(partial.correctionUsage, snapshot.correctionUsage),
+                postProcessedCount: partial.postProcessedCount + snapshot.postProcessedCount,
+                changedWordCount: partial.changedWordCount + snapshot.changedWordCount,
+                manualCorrectionCount: partial.manualCorrectionCount + snapshot.manualCorrectionCount,
+                correctedDictationCount: partial.correctedDictationCount + snapshot.correctedDictationCount,
+                manuallyChangedWordCount: partial.manuallyChangedWordCount + snapshot.manuallyChangedWordCount,
+                dictionaryCorrectionDictationCount: partial.dictionaryCorrectionDictationCount
+                    + snapshot.dictionaryCorrectionDictationCount
             )
         }
     }
 
+    private func mergeCategories(
+        _ lhs: [String: UsageCategoryAggregate],
+        _ rhs: [String: UsageCategoryAggregate]
+    ) -> [String: UsageCategoryAggregate] {
+        var result = lhs
+        for (key, value) in rhs {
+            var aggregate = result[key] ?? UsageCategoryAggregate(label: value.label)
+            aggregate.merge(value)
+            result[key] = aggregate
+        }
+        return result
+    }
+
+    private func mergeCounts(_ lhs: [String: Int], _ rhs: [String: Int]) -> [String: Int] {
+        var result = lhs
+        for (key, value) in rhs { result[key, default: 0] += value }
+        return result
+    }
+
+    private func mergeCorrections(
+        _ lhs: [String: UsageCorrectionAggregate],
+        _ rhs: [String: UsageCorrectionAggregate]
+    ) -> [String: UsageCorrectionAggregate] {
+        var result = lhs
+        for (key, value) in rhs {
+            var aggregate = result[key] ?? value
+            if result[key] != nil { aggregate.count += value.count }
+            result[key] = aggregate
+        }
+        return result
+    }
+
+    private static func durationBucket(for seconds: Double) -> String {
+        switch seconds {
+        case ..<10: "under10"
+        case ..<30: "10to30"
+        case ..<60: "30to60"
+        case ..<120: "60to120"
+        default: "over120"
+        }
+    }
+
+    private func normalized(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    private func normalizedDomain(_ value: String?) -> String? {
+        guard var value = normalized(value) else { return nil }
+        if value.lowercased().hasPrefix("www.") { value.removeFirst(4) }
+        return value
+    }
+
+    private var historyBackfillCompleted: Bool {
+        metadataFlag(for: Self.historyBackfillCompletedKey)
+    }
+
+    private var historyDetailBackfillCompleted: Bool {
+        metadataFlag(for: Self.historyDetailBackfillCompletedKey)
+    }
+
+    private func metadataFlag(for key: String) -> Bool {
+        do {
+            return try metadataValue(for: key) == "true"
+        } catch {
+            usageStatisticsLogger.error("Failed to read usage statistics metadata: \(error.localizedDescription)")
+            return true
+        }
+    }
+
+    private func statisticsDay(for timestamp: Date) throws -> UsageStatisticsDay {
+        let dayStart = calendar.startOfDay(for: timestamp)
+        if let existingDay = try findDay(dayStart) { return existingDay }
+        let day = UsageStatisticsDay(day: dayStart)
+        modelContext.insert(day)
+        return day
+    }
+
     private func findDay(_ day: Date) throws -> UsageStatisticsDay? {
-        let descriptor = FetchDescriptor<UsageStatisticsDay>()
-        let existing = try modelContext.fetch(descriptor)
+        let existing = try modelContext.fetch(FetchDescriptor<UsageStatisticsDay>())
         return existing.first { $0.day == day }
     }
 
@@ -397,7 +710,21 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
                     transcriptionCount: $0.transcriptionCount,
                     totalWords: $0.totalWords,
                     totalDurationSeconds: $0.totalDurationSeconds,
-                    appBundleIdentifiers: $0.appBundleIdentifiers
+                    appBundleIdentifiers: $0.appBundleIdentifiers,
+                    appUsage: $0.appUsage,
+                    domainUsage: $0.domainUsage,
+                    languageUsage: $0.languageUsage,
+                    engineUsage: $0.engineUsage,
+                    pipelineStepUsage: $0.pipelineStepUsage,
+                    hourlyUsage: $0.hourlyUsage,
+                    durationBucketUsage: $0.durationBucketUsage,
+                    correctionUsage: $0.correctionUsage,
+                    postProcessedCount: $0.postProcessedCount,
+                    changedWordCount: $0.changedWordCount,
+                    manualCorrectionCount: $0.manualCorrectionCount,
+                    correctedDictationCount: $0.correctedDictationCount,
+                    manuallyChangedWordCount: $0.manuallyChangedWordCount,
+                    dictionaryCorrectionDictationCount: $0.dictionaryCorrectionDictationCount
                 )
             }
         } catch {
@@ -412,12 +739,20 @@ final class UsageStatisticsService: ObservableObject, UsageStatisticsRecording {
     }
 
     private func setHistoryBackfillCompleted(_ completed: Bool) throws {
+        try setMetadataFlag(completed, for: Self.historyBackfillCompletedKey)
+    }
+
+    private func setHistoryDetailBackfillCompleted(_ completed: Bool) throws {
+        try setMetadataFlag(completed, for: Self.historyDetailBackfillCompletedKey)
+    }
+
+    private func setMetadataFlag(_ completed: Bool, for key: String) throws {
         let value = completed ? "true" : "false"
         if let existing = try modelContext.fetch(FetchDescriptor<UsageStatisticsMetadata>())
-            .first(where: { $0.key == Self.historyBackfillCompletedKey }) {
+            .first(where: { $0.key == key }) {
             existing.value = value
         } else {
-            modelContext.insert(UsageStatisticsMetadata(key: Self.historyBackfillCompletedKey, value: value))
+            modelContext.insert(UsageStatisticsMetadata(key: key, value: value))
         }
     }
 

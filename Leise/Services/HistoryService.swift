@@ -106,7 +106,20 @@ final class HistoryService: ObservableObject {
         return url
     }
 
-    func updateRecord(_ record: TranscriptionRecord, finalText: String) {
+    func updateRecord(
+        _ record: TranscriptionRecord,
+        finalText: String,
+        isManualEdit: Bool = false,
+        changedWordCount: Int = 0
+    ) {
+        if isManualEdit {
+            if record.initialFinalText == nil {
+                record.initialFinalText = record.finalText
+            }
+            record.manualEditCount += 1
+            record.manualChangedWordCount += max(changedWordCount, 0)
+            record.lastManuallyEditedAt = Date()
+        }
         record.finalText = finalText
         record.wordsCount = finalText.split(separator: " ").count
         save()
@@ -165,6 +178,10 @@ final class HistoryService: ObservableObject {
                     modelUsed: snapshot.modelUsed,
                     audioFileName: snapshot.audioFileName
                 )
+                record.initialFinalText = snapshot.initialFinalText ?? snapshot.finalText
+                record.manualEditCount = snapshot.manualEditCount ?? 0
+                record.manualChangedWordCount = snapshot.manualChangedWordCount ?? 0
+                record.lastManuallyEditedAt = snapshot.lastManuallyEditedAt
                 record.wordsCount = snapshot.wordsCount
                 record.pipelineStepList = snapshot.pipelineSteps
                 modelContext.insert(record)

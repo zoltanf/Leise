@@ -1,29 +1,35 @@
 import AppKit
-import SwiftUI
 import Charts
+import SwiftUI
 
 struct HomeSettingsView: View {
     @ObservedObject private var viewModel = ServiceContainer.shared.homeViewModel
     @ObservedObject private var dictation = ServiceContainer.shared.dictationViewModel
 
     var body: some View {
-        dashboardView
-    }
-
-    private var dashboardView: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Row 0: Permissions banner (outside scroll)
             if dictation.needsMicPermission || dictation.needsAccessibilityPermission {
                 permissionsBanner
                     .padding(.horizontal)
                     .padding(.top)
             }
 
-            // Header: Title + picker (outside scroll, always clickable)
             HStack {
                 Text(String(localized: "Dashboard"))
                     .font(.title2)
                     .fontWeight(.semibold)
+
+                if viewModel.hasAnyTranscriptions {
+                    Picker(String(localized: "Dashboard section"), selection: $viewModel.selectedSection) {
+                        ForEach(DashboardSection.allCases) { section in
+                            Text(section.displayName).tag(section)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: 360)
+                }
+
                 Spacer()
                 timePeriodPicker
                 #if DEBUG
@@ -36,19 +42,16 @@ struct HomeSettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // Row 1: Stats grid or Getting Started
                     if viewModel.hasAnyTranscriptions {
-                        statsGrid
+                        switch viewModel.selectedSection {
+                        case .overview: overviewDashboard
+                        case .apps: appsDashboard
+                        case .quality: qualityDashboard
+                        }
                     } else {
                         gettingStartedCard
+                        activitySection
                     }
-
-                    // Row 2: Activity chart
-                    chartSection
-
-                    // Row 3: Recent transcriptions
-                    recentTranscriptionsSection
-
                 }
                 .padding(.horizontal)
                 .padding(.bottom)
@@ -58,7 +61,532 @@ struct HomeSettingsView: View {
         .frame(minWidth: 500, minHeight: 400)
     }
 
-    // MARK: - Dashboard Actions
+    // MARK: - Overview
+
+    private var overviewDashboard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 12)], spacing: 12) {
+                StatCard(
+                    title: String(localized: "Dictations"),
+                    value: "\(viewModel.dictationCount)",
+                    systemImage: "waveform",
+                    trend: viewModel.dictationsTrend
+                )
+                StatCard(
+                    title: String(localized: "Words"),
+                    value: "\(viewModel.wordsCount)",
+                    systemImage: "text.word.spacing",
+                    trend: viewModel.wordsTrend
+                )
+                StatCard(
+                    title: String(localized: "Avg. WPM"),
+                    value: viewModel.averageWPM,
+                    systemImage: "speedometer",
+                    trend: viewModel.wpmTrend
+                )
+                StatCard(
+                    title: String(localized: "Time Saved"),
+                    value: viewModel.timeSaved,
+                    systemImage: "clock.badge.checkmark",
+                    trend: viewModel.timeSavedTrend,
+                    subtitle: String(localized: "vs. 45 WPM typing")
+                )
+            }
+
+            activitySection
+            habitSummary
+            habitsHeatmapSection
+            durationDistributionSection
+            recentTranscriptionsSection
+        }
+    }
+
+    private var activitySection: some View {
+        DashboardCard {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(String(localized: "Activity"))
+                        .font(.headline)
+                    Spacer()
+                    Text(activityGranularityLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if viewModel.chartData.isEmpty || viewModel.chartData.allSatisfy({ $0.wordCount == 0 }) {
+                    Text(viewModel.hasAnyTranscriptions
+                        ? String(localized: "No activity in this period.")
+                        : String(localized: "Your activity will appear here after your first transcription."))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 200)
+                } else {
+                    Chart(viewModel.chartData) { point in
+                        BarMark(
+                            x: .value(String(localized: "Date"), point.date),
+                            y: .value(String(localized: "Words"), point.wordCount)
+                        )
+                        .foregroundStyle(Color.accentColor.gradient)
+                        .cornerRadius(4)
+                        .accessibilityLabel(activityLabel(point.date))
+                        .accessibilityValue("\(point.wordCount) \(String(localized: "words")), \(point.transcriptionCount) \(String(localized: "dictations"))")
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 7)) { value in
+                            AxisGridLine()
+                            AxisValueLabel {
+                                if let date = value.as(Date.self) {
+                                    Text(activityLabel(date))
+                                }
+                            }
+                        }
+                    }
+                    .frame(height: 220)
+                    .accessibilityLabel(String(localized: "Words dictated over time"))
+                }
+            }
+        }
+    }
+
+    private var habitSummary: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 12)], spacing: 12) {
+            StatCard(
+                title: String(localized: "Active Days"),
+                value: "\(viewModel.activeDays)",
+                systemImage: "calendar.badge.checkmark"
+            )
+            StatCard(
+                title: String(localized: "Current Streak"),
+                value: "\(viewModel.currentStreak)",
+                systemImage: "flame",
+                subtitle: String(localized: "days")
+            )
+            StatCard(
+                title: String(localized: "Avg. Duration"),
+                value: viewModel.averageDictationDuration,
+                systemImage: "timer"
+            )
+            StatCard(
+                title: String(localized: "Words / Dictation"),
+                value: viewModel.averageWordsPerDictation,
+                systemImage: "textformat.abc"
+            )
+        }
+    }
+
+    private var habitsHeatmapSection: some View {
+        DashboardCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(localized: "Dictation Habits"))
+                    .font(.headline)
+                Text(String(localized: "When you dictate most"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Chart(viewModel.habitHeatmap) { point in
+                    RectangleMark(
+                        x: .value(String(localized: "Time"), point.hourLabel),
+                        y: .value(String(localized: "Weekday"), point.weekdayLabel)
+                    )
+                    .foregroundStyle(heatmapColor(for: point.count))
+                    .cornerRadius(3)
+                    .accessibilityLabel("\(point.weekdayLabel), \(point.hourLabel):00")
+                    .accessibilityValue("\(point.count) \(String(localized: "dictations"))")
+                }
+                .chartYScale(domain: Array(heatmapWeekdayDomain.reversed()))
+                .frame(height: 210)
+                .accessibilityLabel(String(localized: "Dictations by weekday and time of day"))
+            }
+        }
+    }
+
+    private var durationDistributionSection: some View {
+        DashboardCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(localized: "Dictation Length"))
+                    .font(.headline)
+                Text(String(localized: "Distribution by speaking duration"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Chart(viewModel.durationBuckets) { bucket in
+                    BarMark(
+                        x: .value(String(localized: "Duration"), bucket.label),
+                        y: .value(String(localized: "Dictations"), bucket.count)
+                    )
+                    .foregroundStyle(Color.accentColor.gradient)
+                    .cornerRadius(4)
+                    .annotation(position: .top) {
+                        if bucket.count > 0 {
+                            Text("\(bucket.count)")
+                                .font(.caption2)
+                                .monospacedDigit()
+                        }
+                    }
+                    .accessibilityLabel(bucket.label)
+                    .accessibilityValue("\(bucket.count) \(String(localized: "dictations"))")
+                }
+                .chartXScale(domain: viewModel.durationBuckets.sorted { $0.order < $1.order }.map(\.label))
+                .frame(height: 180)
+                .accessibilityLabel(String(localized: "Distribution of dictation duration"))
+            }
+        }
+    }
+
+    // MARK: - Apps
+
+    private var appsDashboard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                StatCard(
+                    title: String(localized: "Top App"),
+                    value: viewModel.topAppLabel,
+                    systemImage: "app.badge"
+                )
+                StatCard(
+                    title: String(localized: "Apps Used"),
+                    value: "\(viewModel.appsUsed)",
+                    systemImage: "square.grid.2x2"
+                )
+                StatCard(
+                    title: String(localized: "Top-App Share"),
+                    value: viewModel.topAppShare,
+                    systemImage: "chart.bar.fill"
+                )
+            }
+
+            DashboardCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text(String(localized: "Usage by Application"))
+                            .font(.headline)
+                        Spacer()
+                        Picker(String(localized: "Application metric"), selection: $viewModel.selectedAppMetric) {
+                            ForEach(AppUsageMetric.allCases) { metric in
+                                Text(metric.displayName).tag(metric)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(maxWidth: 280)
+                    }
+
+                    if viewModel.appUsage.isEmpty {
+                        emptyAnalyticsMessage(String(localized: "Application details will appear after your next dictation."))
+                    } else {
+                        let maximum = viewModel.appUsage.map { $0.value(for: viewModel.selectedAppMetric) }.max() ?? 1
+                        VStack(spacing: 10) {
+                            ForEach(viewModel.appUsage.prefix(12)) { item in
+                                UsageBarRow(
+                                    label: item.label,
+                                    value: appValueLabel(item),
+                                    fraction: maximum > 0 ? item.value(for: viewModel.selectedAppMetric) / maximum : 0,
+                                    accessibilityValue: "\(item.transcriptionCount) \(String(localized: "dictations")), \(item.words) \(String(localized: "words"))"
+                                ) {
+                                    viewModel.requestHistory(forAppBundleIdentifier: item.id)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            DashboardCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(String(localized: "Browser Domains"))
+                        .font(.headline)
+                    Text(String(localized: "Stored locally from browser context"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if viewModel.domainUsage.isEmpty {
+                        emptyAnalyticsMessage(String(localized: "No browser-domain activity in this period."))
+                    } else {
+                        let maximum = viewModel.domainUsage.map(\.transcriptionCount).max() ?? 1
+                        VStack(spacing: 10) {
+                            ForEach(viewModel.domainUsage.prefix(10)) { item in
+                                UsageBarRow(
+                                    label: item.label,
+                                    value: "\(item.transcriptionCount)",
+                                    fraction: Double(item.transcriptionCount) / Double(maximum),
+                                    accessibilityValue: "\(item.transcriptionCount) \(String(localized: "dictations"))"
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Quality
+
+    private var qualityDashboard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
+                StatCard(
+                    title: String(localized: "Auto-Enhanced"),
+                    value: "\(viewModel.postProcessedCount)",
+                    systemImage: "sparkles",
+                    subtitle: viewModel.enhancementRate
+                )
+                StatCard(
+                    title: String(localized: "Words Enhanced"),
+                    value: "\(viewModel.changedWordCount)",
+                    systemImage: "wand.and.stars"
+                )
+                StatCard(
+                    title: String(localized: "Manual Edits"),
+                    value: "\(viewModel.manualCorrectionCount)",
+                    systemImage: "pencil.and.outline",
+                    subtitle: "\(viewModel.manuallyChangedWordCount) \(String(localized: "words changed"))"
+                )
+                StatCard(
+                    title: String(localized: "Dictionary Fixes"),
+                    value: "\(viewModel.dictionaryCorrectionDictationCount)",
+                    systemImage: "book.badge.checkmark",
+                    subtitle: String(localized: "dictations improved")
+                )
+            }
+
+            postProcessingCoverageSection
+            correctionTrendSection
+            processingBreakdownSection
+            languageAndEngineSection
+            learnedCorrectionsSection
+        }
+    }
+
+    private var postProcessingCoverageSection: some View {
+        DashboardCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(localized: "Post-Processing Coverage"))
+                    .font(.headline)
+
+                if viewModel.dictationCount == 0 {
+                    emptyAnalyticsMessage(String(localized: "No quality data in this period."))
+                } else {
+                    Chart {
+                        BarMark(
+                            x: .value(String(localized: "Dictations"), viewModel.postProcessedCount),
+                            y: .value(String(localized: "Category"), String(localized: "All dictations"))
+                        )
+                        .foregroundStyle(by: .value(String(localized: "Result"), String(localized: "Auto-enhanced")))
+
+                        BarMark(
+                            x: .value(String(localized: "Dictations"), max(0, viewModel.dictationCount - viewModel.postProcessedCount)),
+                            y: .value(String(localized: "Category"), String(localized: "All dictations"))
+                        )
+                        .foregroundStyle(by: .value(String(localized: "Result"), String(localized: "Unchanged")))
+                    }
+                    .chartLegend(position: .bottom, alignment: .leading)
+                    .frame(height: 105)
+                    .accessibilityLabel(String(localized: "Share of auto-enhanced and unchanged dictations"))
+                }
+            }
+        }
+    }
+
+    private var correctionTrendSection: some View {
+        DashboardCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(localized: "Manual Corrections Over Time"))
+                    .font(.headline)
+
+                if viewModel.chartData.allSatisfy({ $0.manualCorrectionCount == 0 }) {
+                    emptyAnalyticsMessage(String(localized: "Manual edits made from now on will appear here."))
+                } else {
+                    Chart(viewModel.chartData) { point in
+                        LineMark(
+                            x: .value(String(localized: "Date"), point.date),
+                            y: .value(String(localized: "Manual Edits"), point.manualCorrectionCount)
+                        )
+                        .foregroundStyle(Color.accentColor)
+                        .symbol(.circle)
+                        .interpolationMethod(.catmullRom)
+                        .accessibilityLabel(activityLabel(point.date))
+                        .accessibilityValue("\(point.manualCorrectionCount) \(String(localized: "manual edits"))")
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 7)) { value in
+                            AxisGridLine()
+                            AxisValueLabel {
+                                if let date = value.as(Date.self) { Text(activityLabel(date)) }
+                            }
+                        }
+                    }
+                    .frame(height: 180)
+                    .accessibilityLabel(String(localized: "Manual corrections over time"))
+                }
+            }
+        }
+    }
+
+    private var processingBreakdownSection: some View {
+        DashboardCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(String(localized: "Processing Contributions"))
+                    .font(.headline)
+
+                if viewModel.pipelineUsage.isEmpty {
+                    emptyAnalyticsMessage(String(localized: "No processing steps changed text in this period."))
+                } else {
+                    let maximum = viewModel.pipelineUsage.map(\.count).max() ?? 1
+                    VStack(spacing: 10) {
+                        ForEach(viewModel.pipelineUsage.prefix(10)) { item in
+                            UsageBarRow(
+                                label: item.label,
+                                value: "\(item.count)",
+                                fraction: Double(item.count) / Double(maximum),
+                                accessibilityValue: "\(item.count) \(String(localized: "dictations"))"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var languageAndEngineSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            categoryUsageSection(title: String(localized: "Languages"), items: viewModel.languageUsage)
+            categoryUsageSection(title: String(localized: "Engines & Models"), items: viewModel.engineUsage)
+        }
+    }
+
+    private func categoryUsageSection(title: String, items: [RankedUsageItem]) -> some View {
+        DashboardCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(title)
+                    .font(.headline)
+                if items.isEmpty {
+                    emptyAnalyticsMessage(String(localized: "No data in this period."))
+                } else {
+                    let maximum = items.map(\.transcriptionCount).max() ?? 1
+                    VStack(spacing: 10) {
+                        ForEach(items.prefix(10)) { item in
+                            UsageBarRow(
+                                label: item.label.uppercased(),
+                                value: "\(item.transcriptionCount)",
+                                fraction: Double(item.transcriptionCount) / Double(maximum),
+                                accessibilityValue: "\(item.transcriptionCount) \(String(localized: "dictations"))"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var learnedCorrectionsSection: some View {
+        DashboardCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(String(localized: "Learned Corrections"))
+                    .font(.headline)
+
+                if viewModel.correctionUsage.isEmpty {
+                    emptyAnalyticsMessage(String(localized: "Corrections learned from History edits will appear here."))
+                } else {
+                    ForEach(Array(viewModel.correctionUsage.prefix(10).enumerated()), id: \.element.id) { index, correction in
+                        HStack(spacing: 8) {
+                            Text(correction.original)
+                                .strikethrough()
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "arrow.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                            Text(correction.replacement)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("×\(correction.count)")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                        if index < min(viewModel.correctionUsage.count, 10) - 1 { Divider() }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Recent Transcriptions
+
+    private var recentTranscriptionsSection: some View {
+        DashboardCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(localized: "Recent Transcriptions"))
+                    .font(.headline)
+
+                if viewModel.recentTranscriptions.isEmpty {
+                    Text(String(localized: "Press \(primaryHotkeyLabel) in any app to get started."))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 60)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(viewModel.recentTranscriptions, id: \.id) { record in
+                            Button {
+                                viewModel.pendingHistoryAppBundleIdentifier = nil
+                                viewModel.pendingHistoryTimeRange = .all
+                                viewModel.navigateToHistory = true
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(record.preview)
+                                            .lineLimit(1)
+                                            .foregroundStyle(.primary)
+                                        HStack(spacing: 4) {
+                                            Text(record.timestamp, format: .relative(presentation: .named))
+                                            if let appName = record.appName { Text("– \(appName)") }
+                                        }
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .padding(.vertical, 8)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            if record.id != viewModel.recentTranscriptions.last?.id { Divider() }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Dashboard Controls
+
+    private var timePeriodPicker: some View {
+        HStack(spacing: 2) {
+            ForEach(TimePeriod.allCases, id: \.self) { period in
+                periodButton(period)
+            }
+        }
+        .padding(2)
+        .background(.quaternary.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func periodButton(_ period: TimePeriod) -> some View {
+        let isSelected = viewModel.selectedTimePeriod == period
+        return Button(period.displayName) {
+            viewModel.selectedTimePeriod = period
+        }
+        .buttonStyle(.plain)
+        .font(.caption)
+        .fontWeight(isSelected ? .semibold : .regular)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(isSelected ? Color.accentColor : Color.clear)
+        .foregroundStyle(isSelected ? .white : .secondary)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .accessibilityValue(isSelected ? String(localized: "Selected") : "")
+    }
 
     #if DEBUG
     @State private var showClearAllDataConfirmation = false
@@ -66,9 +594,7 @@ struct HomeSettingsView: View {
     private var dashboardActionsMenu: some View {
         Menu {
             Button("Seed Demo Data", action: seedDemoData)
-
             Divider()
-
             Button("Clear All Data", role: .destructive) {
                 showClearAllDataConfirmation = true
             }
@@ -79,10 +605,7 @@ struct HomeSettingsView: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Dashboard Actions")
-        .confirmationDialog(
-            "Clear All Data?",
-            isPresented: $showClearAllDataConfirmation
-        ) {
+        .confirmationDialog("Clear All Data?", isPresented: $showClearAllDataConfirmation) {
             Button("Clear All Data", role: .destructive, action: clearAllData)
         } message: {
             Text("This will permanently delete all transcription history and usage statistics.")
@@ -101,290 +624,56 @@ struct HomeSettingsView: View {
     }
     #endif
 
-    // MARK: - Time Period Picker
-
-    private var timePeriodPicker: some View {
-        HStack(spacing: 2) {
-            periodButton(.week)
-            periodButton(.month)
-            periodButton(.allTime)
-        }
-        .padding(2)
-        .background(.quaternary.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-
-    private func periodButton(_ period: TimePeriod) -> some View {
-        let isSelected = viewModel.selectedTimePeriod == period
-        return Text(period.displayName)
-            .font(.caption)
-            .fontWeight(isSelected ? .semibold : .regular)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(isSelected ? Color.accentColor : Color.clear)
-            .foregroundStyle(isSelected ? .white : .secondary)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .contentShape(Rectangle())
-            .onTapGesture {
-                viewModel.selectedTimePeriod = period
-            }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityLabel(period.displayName)
-            .accessibilityValue(isSelected ? String(localized: "Selected") : "")
-    }
-
-    // MARK: - Stats Grid
-
-    private var statsGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
-            StatCard(
-                title: String(localized: "Words"),
-                value: "\(viewModel.wordsCount)",
-                systemImage: "text.word.spacing",
-                trend: viewModel.wordsTrend
-            )
-            StatCard(
-                title: String(localized: "Avg. WPM"),
-                value: viewModel.averageWPM,
-                systemImage: "speedometer",
-                trend: viewModel.wpmTrend
-            )
-            StatCard(
-                title: String(localized: "Apps Used"),
-                value: "\(viewModel.appsUsed)",
-                systemImage: "app.badge",
-                trend: viewModel.appsTrend
-            )
-            StatCard(
-                title: String(localized: "Time Saved"),
-                value: viewModel.timeSaved,
-                systemImage: "clock.badge.checkmark",
-                trend: viewModel.timeSavedTrend
-            )
-        }
-    }
-
-    // MARK: - Chart
-
-    @State private var hoveredDate: Date?
-    @State private var hoverLocation: CGPoint = .zero
-
-    private var chartSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "Activity"))
-                .font(.headline)
-
-            if viewModel.chartData.isEmpty || viewModel.chartData.allSatisfy({ $0.wordCount == 0 }) {
-                Text(viewModel.hasAnyTranscriptions
-                    ? String(localized: "No activity in this period.")
-                    : String(localized: "Your activity will appear here after your first transcription."))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 200)
-            } else {
-                ZStack(alignment: .top) {
-                    Chart(viewModel.chartData) { point in
-                        BarMark(
-                            x: .value(String(localized: "Date"), point.date, unit: .day),
-                            y: .value(String(localized: "Words"), point.wordCount)
-                        )
-                        .foregroundStyle(
-                            hoveredDate != nil && Calendar.current.isDate(point.date, inSameDayAs: hoveredDate!)
-                                ? Color.blue
-                                : Color.blue.opacity(0.7)
-                        )
-                        .cornerRadius(4)
-                    }
-                    .chartXAxis {
-                        AxisMarks(values: .stride(by: .day, count: chartAxisStride)) { _ in
-                            AxisGridLine()
-                            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                        }
-                    }
-                    .chartOverlay { proxy in
-                        GeometryReader { _ in
-                            Rectangle()
-                                .fill(.clear)
-                                .contentShape(Rectangle())
-                                .onContinuousHover { phase in
-                                    switch phase {
-                                    case .active(let location):
-                                        hoverLocation = location
-                                        if let date: Date = proxy.value(atX: location.x) {
-                                            hoveredDate = Calendar.current.startOfDay(for: date)
-                                        }
-                                    case .ended:
-                                        hoveredDate = nil
-                                    }
-                                }
-                        }
-                    }
-                    .id(viewModel.selectedTimePeriod)
-                    .overlay(alignment: .topLeading) {
-                        if let hoveredDate, let point = viewModel.chartData.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hoveredDate) }), point.wordCount > 0 {
-                            VStack(spacing: 2) {
-                                Text("\(point.wordCount) \(String(localized: "words"))")
-                                    .font(.caption.bold())
-                                    .monospacedDigit()
-                                Text(point.date.formatted(.dateTime.month(.abbreviated).day()))
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-                            .offset(x: max(0, hoverLocation.x - 30), y: max(0, hoverLocation.y - 50))
-                            .allowsHitTesting(false)
-                        }
-                    }
-                }
-                .frame(height: 200)
-                .accessibilityHidden(true)
-            }
-        }
-        .padding()
-        .background(.quaternary.opacity(0.3))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var chartAxisStride: Int {
-        switch viewModel.selectedTimePeriod {
-        case .week: return 1
-        case .month: return 5
-        case .allTime: return 7
-        }
-    }
-
-    // MARK: - Recent Transcriptions
-
-    private var recentTranscriptionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "Recent Transcriptions"))
-                .font(.headline)
-
-            if viewModel.recentTranscriptions.isEmpty {
-                Text(String(localized: "Press \(primaryHotkeyLabel) in any app to get started."))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 60)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(viewModel.recentTranscriptions, id: \.id) { record in
-                        Button {
-                            viewModel.navigateToHistory = true
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(record.preview)
-                                        .lineLimit(1)
-                                        .font(.body)
-                                        .foregroundStyle(.primary)
-                                    HStack(spacing: 4) {
-                                        Text(record.timestamp, format: .relative(presentation: .named))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        if let appName = record.appName {
-                                            Text("- \(appName)")
-                                                .font(.caption)
-                                                .foregroundStyle(.tertiary)
-                                        }
-                                    }
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 4)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-
-                        if record.id != viewModel.recentTranscriptions.last?.id {
-                            Divider()
-                        }
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(.quaternary.opacity(0.3))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    // MARK: - Getting Started Card
+    // MARK: - Empty State and Permissions
 
     private var primaryHotkeyLabel: String {
-        if !DictationSettingsHandler.loadHotkeys(for: .hybrid).isEmpty {
-            return dictation.hybridHotkeyLabel
-        }
-        if !DictationSettingsHandler.loadHotkeys(for: .pushToTalk).isEmpty {
-            return dictation.pttHotkeyLabel
-        }
-        if !DictationSettingsHandler.loadHotkeys(for: .toggle).isEmpty {
-            return dictation.toggleHotkeyLabel
-        }
+        if !DictationSettingsHandler.loadHotkeys(for: .hybrid).isEmpty { return dictation.hybridHotkeyLabel }
+        if !DictationSettingsHandler.loadHotkeys(for: .pushToTalk).isEmpty { return dictation.pttHotkeyLabel }
+        if !DictationSettingsHandler.loadHotkeys(for: .toggle).isEmpty { return dictation.toggleHotkeyLabel }
         return dictation.hybridHotkeyLabel
     }
 
     private var gettingStartedCard: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "mic.badge.plus")
-                .font(.system(size: 36))
-                .foregroundStyle(.blue)
-                .accessibilityHidden(true)
-
-            Text(String(localized: "Ready to start dictating?"))
-                .font(.headline)
-
-            HStack(spacing: 6) {
-                Text(String(localized: "Press"))
-                    .foregroundStyle(.secondary)
-                Text(primaryHotkeyLabel)
-                    .font(.body.weight(.medium))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(.blue.opacity(0.1)))
-                Text(String(localized: "in any app to begin."))
-                    .foregroundStyle(.secondary)
+        DashboardCard {
+            VStack(spacing: 12) {
+                Image(systemName: "mic.badge.plus")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.blue)
+                    .accessibilityHidden(true)
+                Text(String(localized: "Ready to start dictating?"))
+                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(String(localized: "Press"))
+                    Text(primaryHotkeyLabel)
+                        .fontWeight(.medium)
+                    Text(String(localized: "in any app to begin."))
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
             }
-            .font(.callout)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .background(.quaternary.opacity(0.3))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
-
-    // MARK: - Permissions Banner
 
     private var permissionsBanner: some View {
         VStack(spacing: 8) {
             if dictation.needsMicPermission {
                 HStack {
-                    Label(
-                        String(localized: "Microphone access required"),
-                        systemImage: "mic.slash"
-                    )
+                    Label(String(localized: "Microphone access required"), systemImage: "mic.slash")
                     Spacer()
-                    Button(String(localized: "Grant Access")) {
-                        dictation.requestMicPermission()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    Button(String(localized: "Grant Access")) { dictation.requestMicPermission() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                 }
             }
             if dictation.needsAccessibilityPermission {
                 HStack {
-                    Label(
-                        String(localized: "Accessibility access required"),
-                        systemImage: "lock.shield"
-                    )
+                    Label(String(localized: "Accessibility access required"), systemImage: "lock.shield")
                     Spacer()
-                    Button(String(localized: "Grant Access")) {
-                        dictation.requestAccessibilityPermission()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    Button(String(localized: "Grant Access")) { dictation.requestAccessibilityPermission() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                 }
             }
         }
@@ -393,15 +682,125 @@ struct HomeSettingsView: View {
         .background(.red.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
+
+    // MARK: - Formatting
+
+    private var activityGranularityLabel: String {
+        switch viewModel.chartGranularity {
+        case .day: String(localized: "Daily")
+        case .week: String(localized: "Weekly")
+        case .month: String(localized: "Monthly")
+        }
+    }
+
+    private func activityLabel(_ date: Date) -> String {
+        switch viewModel.chartGranularity {
+        case .day: date.formatted(.dateTime.month(.abbreviated).day())
+        case .week: String(localized: "Week of \(date.formatted(.dateTime.month(.abbreviated).day()))")
+        case .month: date.formatted(.dateTime.month(.abbreviated).year())
+        }
+    }
+
+    private var heatmapWeekdayDomain: [String] {
+        (0..<7).compactMap { index in
+            viewModel.habitHeatmap.first(where: { $0.weekdayIndex == index })?.weekdayLabel
+        }
+    }
+
+    private func heatmapColor(for count: Int) -> Color {
+        let maximum = max(viewModel.habitHeatmap.map(\.count).max() ?? 0, 1)
+        guard count > 0 else { return Color.secondary.opacity(0.08) }
+        return Color.accentColor.opacity(0.2 + 0.8 * Double(count) / Double(maximum))
+    }
+
+    private func appValueLabel(_ item: RankedUsageItem) -> String {
+        switch viewModel.selectedAppMetric {
+        case .dictations: "\(item.transcriptionCount)"
+        case .words: "\(item.words)"
+        case .time: formatDuration(item.durationSeconds)
+        }
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        let value = Int(seconds.rounded())
+        if value < 60 { return "\(value)s" }
+        return "\(value / 60)m \(value % 60)s"
+    }
+
+    private func emptyAnalyticsMessage(_ text: String) -> some View {
+        Text(text)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 54, alignment: .center)
+    }
 }
 
-// MARK: - Stat Card
+private struct DashboardCard<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding()
+            .background(.quaternary.opacity(0.3))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct UsageBarRow: View {
+    let label: String
+    let value: String
+    let fraction: Double
+    let accessibilityValue: String
+    var action: (() -> Void)?
+
+    var body: some View {
+        Group {
+            if let action {
+                Button(action: action) { rowContent }
+                    .buttonStyle(.plain)
+            } else {
+                rowContent
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .lineLimit(1)
+                .frame(width: 140, alignment: .leading)
+            GeometryReader { geometry in
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.accentColor.opacity(0.75))
+                    .frame(width: max(2, geometry.size.width * min(max(fraction, 0), 1)))
+            }
+            .frame(height: 16)
+            Text(value)
+                .font(.callout.monospacedDigit())
+                .frame(minWidth: 48, alignment: .trailing)
+            if action != nil {
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+}
 
 private struct StatCard: View {
     let title: String
     let value: String
     let systemImage: String
-    var trend: Double? = nil
+    var trend: Double?
+    var subtitle: String?
 
     var body: some View {
         VStack(spacing: 6) {
@@ -410,17 +809,23 @@ private struct StatCard: View {
                 .foregroundStyle(.blue)
                 .accessibilityHidden(true)
             Text(value)
-                .font(.title)
+                .font(.title2)
                 .fontWeight(.bold)
                 .monospacedDigit()
-            if let trend {
-                trendLabel(trend)
-            }
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+            if let trend { trendLabel(trend) }
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 96)
         .padding(.vertical, 12)
         .background(.quaternary.opacity(0.3))
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -428,17 +833,14 @@ private struct StatCard: View {
         .accessibilityLabel(Text("\(title), \(value)"))
     }
 
-    @ViewBuilder
     private func trendLabel(_ percent: Double) -> some View {
         let isPositive = percent >= 0
-        let displayPercent = Int(abs(percent))
-        HStack(spacing: 2) {
+        return HStack(spacing: 2) {
             Image(systemName: isPositive ? "arrow.up.right" : "arrow.down.right")
-                .font(.caption2)
-            Text("\(displayPercent)%")
-                .font(.caption2)
+            Text("\(Int(abs(percent)))%")
                 .monospacedDigit()
         }
+        .font(.caption2)
         .foregroundStyle(isPositive ? .green : .red)
     }
 }

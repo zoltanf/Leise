@@ -66,6 +66,10 @@ enum HistoryExporter {
             lines.append("- **Processing:** \(steps.joined(separator: ", "))")
         }
 
+        if record.wasManuallyEdited {
+            lines.append("- **Manual edits:** \(record.manualEditCount) (\(record.manualChangedWordCount) words changed)")
+        }
+
         lines.append("")
         lines.append("---")
         lines.append("")
@@ -119,6 +123,17 @@ enum HistoryExporter {
         let steps = record.pipelineStepList
         if !steps.isEmpty {
             dict["pipelineSteps"] = steps
+        }
+
+        if let initialFinalText = record.initialFinalText {
+            dict["initialProcessedText"] = initialFinalText
+        }
+        if record.wasManuallyEdited {
+            dict["manualEditCount"] = record.manualEditCount
+            dict["manualChangedWords"] = record.manualChangedWordCount
+            if let editedAt = record.lastManuallyEditedAt {
+                dict["lastManuallyEditedAt"] = iso.string(from: editedAt)
+            }
         }
 
         guard let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]),

@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app_path="${1:-}"
 expected_version="${2:-}"
 expected_build="${3:-}"
+edition="${4:-on-demand}"
 
 fail() {
   printf '[leise-release-test] error: %s\n' "$*" >&2
@@ -16,9 +17,14 @@ log() {
 }
 
 if [[ -z "$app_path" || ! -d "$app_path" ]]; then
-  printf 'Usage: %s <Leise.app> [expected-version] [expected-build]\n' "$0" >&2
+  printf 'Usage: %s <Leise.app> [expected-version] [expected-build] [on-demand|offline]\n' "$0" >&2
   exit 2
 fi
+
+case "$edition" in
+  on-demand|offline) ;;
+  *) fail "unknown release edition: $edition" ;;
+esac
 
 info_plist="$app_path/Contents/Info.plist"
 [[ -f "$info_plist" ]] || fail "Info.plist is missing"
@@ -58,7 +64,39 @@ strings "$binary_path" | grep -F 'parakeet-tdt-0.6b-v3' >/dev/null \
 strings "$binary_path" | grep -F 'filler-words' >/dev/null \
   || fail "filler cleanup component identifier is missing"
 
+offline_models="$app_path/Contents/Resources/OfflineModels"
+if [[ "$edition" == "offline" ]]; then
+  [[ -f "$offline_models/manifest.json" ]] || fail "offline model manifest is missing"
+  [[ -f "$offline_models/NOTICE.txt" ]] || fail "offline model attribution notice is missing"
+  manifest_edition="$(plutil -extract edition raw -o - "$offline_models/manifest.json")"
+  [[ "$manifest_edition" == "offline" ]] || fail "unexpected offline manifest edition: $manifest_edition"
+
+  required_paths=(
+    "parakeet-tdt-0.6b-v2/Preprocessor.mlmodelc/coremldata.bin"
+    "parakeet-tdt-0.6b-v2/Encoder.mlmodelc/coremldata.bin"
+    "parakeet-tdt-0.6b-v2/Decoder.mlmodelc/coremldata.bin"
+    "parakeet-tdt-0.6b-v2/JointDecision.mlmodelc/coremldata.bin"
+    "parakeet-tdt-0.6b-v2/parakeet_vocab.json"
+    "parakeet-tdt-0.6b-v3/Preprocessor.mlmodelc/coremldata.bin"
+    "parakeet-tdt-0.6b-v3/Encoder.mlmodelc/coremldata.bin"
+    "parakeet-tdt-0.6b-v3/Decoder.mlmodelc/coremldata.bin"
+    "parakeet-tdt-0.6b-v3/JointDecisionv3.mlmodelc/coremldata.bin"
+    "parakeet-tdt-0.6b-v3/parakeet_vocab.json"
+    "parakeet-ctc-110m-coreml/MelSpectrogram.mlmodelc/coremldata.bin"
+    "parakeet-ctc-110m-coreml/AudioEncoder.mlmodelc/coremldata.bin"
+    "parakeet-ctc-110m-coreml/vocab.json"
+    "parakeet-ctc-110m-coreml/tokenizer.json"
+  )
+  for relative_path in "${required_paths[@]}"; do
+    [[ -s "$offline_models/$relative_path" ]] \
+      || fail "offline model asset is missing or empty: $relative_path"
+  done
+else
+  [[ ! -e "$offline_models/manifest.json" ]] \
+    || fail "on-demand edition unexpectedly contains offline models"
+fi
+
 bash "$repo_root/scripts/check_release_binary_instrumentation.sh" "$binary_path"
 
-log "verified Leise $actual_version ($actual_build), $architectures"
+log "verified Leise $actual_version ($actual_build), $architectures, $edition edition"
 log "ad-hoc signature, entitlements, static components, and release instrumentation passed"

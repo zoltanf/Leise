@@ -42,6 +42,9 @@ components.
 - Microphone and Accessibility permission recovery
 - Push-to-talk, toggle, and hybrid dictation hotkeys
 - Parakeet v2/v3 model selection, download, loading, and transcription
+- On-demand edition contains no embedded `OfflineModels` manifest
+- Offline edition loads Parakeet v2, v3, and vocabulary boosting without network access
+- Offline edition identifies itself in Processing settings and hides download-token controls
 - Streaming preview and very short speech handling
 - Text insertion in plain-text, rich-text, browser, and code targets
 - Profile matching by application and website

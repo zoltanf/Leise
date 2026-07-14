@@ -66,13 +66,17 @@ xcodebuild test \
 swift test --package-path LeiseComponents
 ```
 
-Create an ad-hoc-signed local Release build, ZIP, DMG, and SHA-256 checksums with:
+Create ad-hoc-signed on-demand and fully offline Release builds, ZIPs, DMGs, and
+SHA-256 checksums with:
 
 ```sh
 ./scripts/build-release-local.sh
 ```
 
-Artifacts are written to `dist/`. These community builds are not notarized by Apple, so a
+The smaller edition downloads the selected model on demand. The offline edition embeds
+Parakeet v2, Parakeet v3, and the vocabulary-boosting CTC model, so model setup needs no
+network access. Its model cache is prepared under `.build/OfflineModels` and is not committed
+to Git. Artifacts are written to `dist/`. These community builds are not notarized by Apple, so a
 downloaded copy may need its quarantine attribute removed before first launch. See
 [docs/releasing.md](docs/releasing.md) for versioning and GitHub Releases publication.
 

@@ -65,6 +65,7 @@ final class StreamingHandlerTests: XCTestCase {
 
     func testInitialFallbackCanPublishBeforeRegularPollInterval() async {
         let engine = TestTranscriptionEngine()
+        let sessionID = UUID()
         let handler = StreamingHandler(
             modelManager: ModelManagerService(engine: engine),
             recentBufferProvider: { _ in Array(repeating: 0.1, count: 16_000) },
@@ -85,6 +86,7 @@ final class StreamingHandlerTests: XCTestCase {
             languageSelection: .auto,
             task: .transcribe,
             cloudModelOverride: nil,
+            sessionID: sessionID,
             allowLiveTranscription: true,
             stateCheck: { true }
         )
@@ -92,6 +94,48 @@ final class StreamingHandlerTests: XCTestCase {
         await fulfillment(of: [preview], timeout: 1)
         handler.stop()
         XCTAssertEqual(engine.requests.count, 1)
+        XCTAssertEqual(engine.requests.first?.purpose, .preview)
+        XCTAssertEqual(engine.requests.first?.sessionID, sessionID)
+    }
+
+    func testFinalPrecomputationRunsWhilePreviewIsDisabledAndSurvivesFinish() async {
+        let engine = TestTranscriptionEngine(allowsFinalTranscriptionPrecomputation: true)
+        let sessionID = UUID()
+        let samples = Array(repeating: Float(0.1), count: 15 * 16_000)
+        let handler = StreamingHandler(
+            modelManager: ModelManagerService(engine: engine),
+            recentBufferProvider: { _ in [] },
+            fullBufferProvider: { samples },
+            bufferDurationProvider: { 15 },
+            initialFallbackDelay: .seconds(10),
+            fallbackPollInterval: .seconds(10)
+        )
+
+        handler.start(
+            streamPrompt: "Leise",
+            dictionaryTermHints: [DictionaryTermHint(text: "Leise")],
+            engineOverrideId: "parakeet",
+            selectedProviderId: "parakeet",
+            languageSelection: .auto,
+            task: .transcribe,
+            cloudModelOverride: nil,
+            sessionID: sessionID,
+            allowLiveTranscription: false,
+            stateCheck: { true }
+        )
+
+        for _ in 0..<20 where engine.precomputationRequests.isEmpty {
+            await Task.yield()
+        }
+        _ = await handler.finish()
+
+        XCTAssertEqual(engine.requests.count, 0)
+        XCTAssertEqual(engine.precomputationRequests.count, 1)
+        XCTAssertEqual(engine.precomputationRequests.first?.sessionID, sessionID)
+        XCTAssertEqual(engine.discardedPrecomputationSessionIDs, [])
+
+        handler.discardFinalPrecomputation()
+        XCTAssertEqual(engine.discardedPrecomputationSessionIDs, [sessionID])
     }
 
     func testDictationWarmupUsesDownloadedModelAndAvoidsSecondPreparation() async throws {

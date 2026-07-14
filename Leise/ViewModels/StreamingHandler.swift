@@ -8,6 +8,9 @@ final class StreamingHandler: @unchecked Sendable {
     private static let defaultInitialFallbackDelay: Duration = .milliseconds(1_250)
     private static let defaultFallbackPollInterval: Duration = .seconds(3)
     private static let fallbackPreviewWindowDuration: TimeInterval = 10
+    private static let firstPrecomputationDuration: TimeInterval = 15
+    private static let subsequentPrecomputationStride: TimeInterval = 13
+    private static let precomputationPollInterval: Duration = .milliseconds(500)
     private static let livePreviewSampleRate: Double = 16_000
     private static let livePreviewAnalysisFrameDuration: TimeInterval = 0.1
     private static let livePreviewSpeechRMSFloor: Float = 0.004
@@ -20,10 +23,14 @@ final class StreamingHandler: @unchecked Sendable {
     }
 
     private var streamingTask: Task<Void, Never>?
+    private var precomputationTask: Task<Void, Never>?
+    private var activePrecomputationSessionID: UUID?
     private let progressText = OSAllocatedUnfairLock(initialState: "")
 
     private let modelManager: ModelManagerService
     private let recentBufferProvider: (TimeInterval) -> [Float]
+    private let fullBufferProvider: (@Sendable () -> [Float])?
+    private let bufferDurationProvider: (@Sendable () -> TimeInterval)?
     private let initialFallbackDelay: Duration
     private let fallbackPollInterval: Duration
 
@@ -33,11 +40,15 @@ final class StreamingHandler: @unchecked Sendable {
     init(
         modelManager: ModelManagerService,
         recentBufferProvider: @escaping (TimeInterval) -> [Float],
+        fullBufferProvider: (@Sendable () -> [Float])? = nil,
+        bufferDurationProvider: (@Sendable () -> TimeInterval)? = nil,
         initialFallbackDelay: Duration = StreamingHandler.defaultInitialFallbackDelay,
         fallbackPollInterval: Duration = StreamingHandler.defaultFallbackPollInterval
     ) {
         self.modelManager = modelManager
         self.recentBufferProvider = recentBufferProvider
+        self.fullBufferProvider = fullBufferProvider
+        self.bufferDurationProvider = bufferDurationProvider
         self.initialFallbackDelay = initialFallbackDelay
         self.fallbackPollInterval = fallbackPollInterval
     }
@@ -52,19 +63,46 @@ final class StreamingHandler: @unchecked Sendable {
         task: TranscriptionTask,
         cloudModelOverride: String?,
         normalizeNumbers: Bool? = nil,
+        sessionID: UUID? = nil,
         allowLiveTranscription: Bool,
         stateCheck: @escaping @MainActor @Sendable () -> Bool
     ) {
-        stop()
-
-        guard allowLiveTranscription else {
-            logger.info("Live transcript preview skipped: disabled")
-            return
-        }
+        let preservesExistingPrecomputation = sessionID != nil && sessionID == activePrecomputationSessionID
+        stopTasks(discardPrecomputation: !preservesExistingPrecomputation)
 
         let providerId = engineOverrideId ?? selectedProviderId
         guard let providerId, modelManager.hasEngine(id: providerId) else {
             logger.info("Live transcript preview skipped: provider unavailable")
+            return
+        }
+
+        if let sessionID,
+           let fullBufferProvider,
+           let bufferDurationProvider,
+           modelManager.shouldPrecomputeFinalTranscription(
+            engineOverrideId: engineOverrideId,
+            selectedProviderId: selectedProviderId,
+            dictionaryTermHints: dictionaryTermHints
+           ) {
+            activePrecomputationSessionID = sessionID
+            precomputationTask = Task { [weak self] in
+                guard let self else { return }
+                await self.runFinalTranscriptionPrecomputationLoop(
+                    sessionID: sessionID,
+                    fullBufferProvider: fullBufferProvider,
+                    bufferDurationProvider: bufferDurationProvider,
+                    streamPrompt: streamPrompt,
+                    dictionaryTermHints: dictionaryTermHints,
+                    engineOverrideId: engineOverrideId,
+                    selectedProviderId: selectedProviderId,
+                    cloudModelOverride: cloudModelOverride,
+                    stateCheck: stateCheck
+                )
+            }
+        }
+
+        guard allowLiveTranscription else {
+            logger.info("Live transcript preview skipped: disabled")
             return
         }
 
@@ -94,6 +132,7 @@ final class StreamingHandler: @unchecked Sendable {
                 task: task,
                 cloudModelOverride: cloudModelOverride,
                 normalizeNumbers: normalizeNumbers,
+                sessionID: sessionID,
                 stateCheck: stateCheck
             )
         }
@@ -101,18 +140,80 @@ final class StreamingHandler: @unchecked Sendable {
 
     @MainActor
     func finish() async -> TranscriptionResult? {
-        streamingTask?.cancel()
+        let previewTask = streamingTask
+        let finalPrecomputationTask = precomputationTask
+        previewTask?.cancel()
+        finalPrecomputationTask?.cancel()
         streamingTask = nil
+        precomputationTask = nil
+        await previewTask?.value
+        await finalPrecomputationTask?.value
         clearStreamingState(notifyStreamingStopped: true)
         return nil
     }
 
     @MainActor
     func stop() {
+        stopTasks(discardPrecomputation: true)
+    }
+
+    @MainActor
+    func discardFinalPrecomputation() {
+        guard let sessionID = activePrecomputationSessionID else { return }
+        modelManager.discardFinalTranscriptionPrecomputation(sessionID: sessionID)
+        activePrecomputationSessionID = nil
+    }
+
+    @MainActor
+    private func stopTasks(discardPrecomputation: Bool) {
         streamingTask?.cancel()
+        precomputationTask?.cancel()
         streamingTask = nil
+        precomputationTask = nil
+
+        if discardPrecomputation {
+            discardFinalPrecomputation()
+        }
 
         clearStreamingState(notifyStreamingStopped: true)
+    }
+
+    private func runFinalTranscriptionPrecomputationLoop(
+        sessionID: UUID,
+        fullBufferProvider: @escaping @Sendable () -> [Float],
+        bufferDurationProvider: @escaping @Sendable () -> TimeInterval,
+        streamPrompt: String,
+        dictionaryTermHints: [DictionaryTermHint],
+        engineOverrideId: String?,
+        selectedProviderId: String?,
+        cloudModelOverride: String?,
+        stateCheck: @escaping @MainActor @Sendable () -> Bool
+    ) async {
+        var nextRequiredDuration = Self.firstPrecomputationDuration
+
+        while !Task.isCancelled {
+            guard await stateCheck() else { break }
+            let availableDuration = bufferDurationProvider()
+
+            if availableDuration >= nextRequiredDuration {
+                repeat {
+                    nextRequiredDuration += Self.subsequentPrecomputationStride
+                } while availableDuration >= nextRequiredDuration
+
+                let buffer = fullBufferProvider()
+                await modelManager.precomputeFinalTranscription(
+                    audioSamples: buffer,
+                    sessionID: sessionID,
+                    engineOverrideId: engineOverrideId,
+                    selectedProviderId: selectedProviderId,
+                    cloudModelOverride: cloudModelOverride,
+                    prompt: streamPrompt,
+                    dictionaryTermHints: dictionaryTermHints
+                )
+            }
+
+            try? await Task.sleep(for: Self.precomputationPollInterval)
+        }
     }
 
     private func runFallbackLoop(
@@ -123,6 +224,7 @@ final class StreamingHandler: @unchecked Sendable {
         task: TranscriptionTask,
         cloudModelOverride: String?,
         normalizeNumbers: Bool?,
+        sessionID: UUID?,
         stateCheck: @escaping @MainActor @Sendable () -> Bool
     ) async {
         try? await Task.sleep(for: initialFallbackDelay)
@@ -144,6 +246,8 @@ final class StreamingHandler: @unchecked Sendable {
                         prompt: streamPrompt,
                         dictionaryTermHints: dictionaryTermHints,
                         normalizeNumbers: normalizeNumbers,
+                        purpose: .preview,
+                        sessionID: sessionID,
                         onProgress: { [weak self] text in
                             guard let self, !Task.isCancelled else { return false }
                             _ = self.processPreviewUpdate(text, persist: false)

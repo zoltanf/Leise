@@ -84,12 +84,19 @@ final class HistoryViewModel: ObservableObject {
     private let historyService: HistoryService
     private let textDiffService: TextDiffService
     private let dictionaryService: DictionaryService
+    private let usageStatisticsService: UsageStatisticsService?
     private var cancellables = Set<AnyCancellable>()
 
-    init(historyService: HistoryService, textDiffService: TextDiffService, dictionaryService: DictionaryService) {
+    init(
+        historyService: HistoryService,
+        textDiffService: TextDiffService,
+        dictionaryService: DictionaryService,
+        usageStatisticsService: UsageStatisticsService? = nil
+    ) {
         self.historyService = historyService
         self.textDiffService = textDiffService
         self.dictionaryService = dictionaryService
+        self.usageStatisticsService = usageStatisticsService
         self.records = historyService.records
         // Compute initial values before Combine pipeline kicks in
         self.filteredRecords = historyService.records
@@ -169,11 +176,28 @@ final class HistoryViewModel: ObservableObject {
             return
         }
 
-        historyService.updateRecord(record, finalText: newText)
+        let isFirstCorrection = !record.wasManuallyEdited
+        let changedWordCount = UsageStatisticsService.changedWordCount(
+            original: originalText,
+            edited: newText
+        )
+        let suggestions = textDiffService.extractCorrections(original: originalText, edited: newText)
+
+        historyService.updateRecord(
+            record,
+            finalText: newText,
+            isManualEdit: true,
+            changedWordCount: changedWordCount
+        )
+        usageStatisticsService?.recordManualCorrection(
+            timestamp: record.timestamp,
+            isFirstCorrectionForDictation: isFirstCorrection,
+            changedWordCount: changedWordCount,
+            suggestions: suggestions
+        )
         detailViewMode = .compare
         isEditing = false
 
-        let suggestions = textDiffService.extractCorrections(original: originalText, edited: newText)
         if !suggestions.isEmpty {
             dictionaryService.learnCorrections(suggestions)
             correctionSuggestions = suggestions

@@ -6,10 +6,12 @@ public protocol ParakeetStore: Sendable {
     func userDefault(forKey: String) -> Any?
     func setUserDefault(_ value: Any?, forKey: String)
     var shouldRestoreLoadedModelsPassively: Bool { get }
+    var bundledModelsDirectory: URL? { get }
 }
 
 public extension ParakeetStore {
     var shouldRestoreLoadedModelsPassively: Bool { true }
+    var bundledModelsDirectory: URL? { nil }
 }
 
 enum ParakeetAudioUtilities {

@@ -191,6 +191,7 @@ struct BackupHistoryRecord: Codable, Equatable {
     let timestamp: Date
     let rawText: String
     let finalText: String
+    let initialFinalText: String?
     let appName: String?
     let appBundleIdentifier: String?
     let appURL: String?
@@ -201,12 +202,16 @@ struct BackupHistoryRecord: Codable, Equatable {
     let wordsCount: Int
     let audioFileName: String?
     let pipelineSteps: [String]
+    let manualEditCount: Int?
+    let manualChangedWordCount: Int?
+    let lastManuallyEditedAt: Date?
 
     init(_ record: TranscriptionRecord) {
         id = record.id
         timestamp = record.timestamp
         rawText = record.rawText
         finalText = record.finalText
+        initialFinalText = record.initialFinalText
         appName = record.appName
         appBundleIdentifier = record.appBundleIdentifier
         appURL = record.appURL
@@ -217,6 +222,9 @@ struct BackupHistoryRecord: Codable, Equatable {
         wordsCount = record.wordsCount
         audioFileName = record.audioFileName
         pipelineSteps = record.pipelineStepList
+        manualEditCount = record.manualEditCount
+        manualChangedWordCount = record.manualChangedWordCount
+        lastManuallyEditedAt = record.lastManuallyEditedAt
     }
 }
 
@@ -394,6 +402,10 @@ final class UserDataBackupService {
             }
             guard !record.engineUsed.isEmpty, record.wordsCount >= 0 else {
                 throw UserDataBackupError.invalidData("a history record has invalid metadata")
+            }
+            guard (record.manualEditCount ?? 0) >= 0,
+                  (record.manualChangedWordCount ?? 0) >= 0 else {
+                throw UserDataBackupError.invalidData("a history record has invalid correction metadata")
             }
             if let fileName = record.audioFileName,
                fileName.isEmpty || fileName != URL(fileURLWithPath: fileName).lastPathComponent || fileName.contains("\\") {

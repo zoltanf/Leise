@@ -7,6 +7,7 @@ final class TranscriptionRecord {
     var timestamp: Date
     var rawText: String
     var finalText: String
+    var initialFinalText: String?
     var appName: String?
     var appBundleIdentifier: String?
     var appURL: String?
@@ -17,12 +18,20 @@ final class TranscriptionRecord {
     var wordsCount: Int = 0
     var audioFileName: String?
     var pipelineSteps: String?
+    var manualEditCount: Int = 0
+    var manualChangedWordCount: Int = 0
+    var lastManuallyEditedAt: Date?
 
     var preview: String { String(finalText.prefix(100)) }
 
     var wasPostProcessed: Bool {
         rawText.trimmingCharacters(in: .whitespacesAndNewlines) != finalText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+    var wasInitiallyPostProcessed: Bool {
+        rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+            != (initialFinalText ?? finalText).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    var wasManuallyEdited: Bool { manualEditCount > 0 }
     var pipelineStepList: [String] {
         get {
             guard let pipelineSteps, !pipelineSteps.isEmpty else { return [] }
@@ -75,6 +84,7 @@ final class TranscriptionRecord {
         self.timestamp = timestamp
         self.rawText = rawText
         self.finalText = finalText
+        self.initialFinalText = finalText
         self.appName = appName
         self.appBundleIdentifier = appBundleIdentifier
         self.appURL = appURL

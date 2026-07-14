@@ -248,6 +248,43 @@ final class ModelManagerService: ObservableObject {
             .capabilities.allowsBatchPreviewFallback ?? false
     }
 
+    func shouldPrecomputeFinalTranscription(
+        engineOverrideId: String? = nil,
+        selectedProviderId: String? = nil,
+        dictionaryTermHints: [DictionaryTermHint]
+    ) -> Bool {
+        engine(for: engineOverrideId ?? selectedProviderId ?? self.selectedProviderId)?
+            .shouldPrecomputeFinalTranscription(dictionaryTermHints: dictionaryTermHints) ?? false
+    }
+
+    func precomputeFinalTranscription(
+        audioSamples: [Float],
+        sessionID: UUID,
+        engineOverrideId: String? = nil,
+        selectedProviderId: String? = nil,
+        cloudModelOverride: String? = nil,
+        prompt: String? = nil,
+        dictionaryTermHints: [DictionaryTermHint] = []
+    ) async {
+        guard let engine = engine(for: engineOverrideId ?? selectedProviderId ?? self.selectedProviderId),
+              engine.isReady,
+              cloudModelOverride == nil || cloudModelOverride == engine.selectedModelID,
+              engine.shouldPrecomputeFinalTranscription(dictionaryTermHints: dictionaryTermHints) else {
+            return
+        }
+
+        await engine.precomputeFinalTranscription(TranscriptionPrecomputationRequest(
+            sessionID: sessionID,
+            audio: TranscriptionAudio(samples: audioSamples),
+            prompt: prompt,
+            dictionaryTermHints: dictionaryTermHints
+        ))
+    }
+
+    func discardFinalTranscriptionPrecomputation(sessionID: UUID) {
+        engine?.discardFinalTranscriptionPrecomputation(sessionID: sessionID)
+    }
+
     func transcriptionAuthStatus(for engine: any TranscriptionEngine) -> TranscriptionAuthStatus { .available }
 
     func transcriptionAuthStatus(for providerId: String?) -> TranscriptionAuthStatus? {
@@ -276,6 +313,8 @@ final class ModelManagerService: ObservableObject {
         prompt: String? = nil,
         dictionaryTermHints: [DictionaryTermHint] = [],
         normalizeNumbers: Bool? = nil,
+        purpose: TranscriptionRequestPurpose = .final,
+        sessionID: UUID? = nil,
         onProgress: @Sendable @escaping (String) -> Bool
     ) async throws -> TranscriptionResult {
         try await transcribe(
@@ -287,6 +326,8 @@ final class ModelManagerService: ObservableObject {
             prompt: prompt,
             dictionaryTermHints: dictionaryTermHints,
             normalizeNumbers: normalizeNumbers,
+            purpose: purpose,
+            sessionID: sessionID,
             onProgress: onProgress
         )
     }
@@ -300,6 +341,8 @@ final class ModelManagerService: ObservableObject {
         prompt: String? = nil,
         dictionaryTermHints: [DictionaryTermHint] = [],
         normalizeNumbers: Bool? = nil,
+        purpose: TranscriptionRequestPurpose = .final,
+        sessionID: UUID? = nil,
         onProgress: @Sendable @escaping (String) -> Bool = { _ in true }
     ) async throws -> TranscriptionResult {
         try await transcribe(
@@ -311,6 +354,8 @@ final class ModelManagerService: ObservableObject {
             prompt: prompt,
             dictionaryTermHints: dictionaryTermHints,
             normalizeNumbers: normalizeNumbers,
+            purpose: purpose,
+            sessionID: sessionID,
             onProgress: onProgress,
             onSourceProgress: { _ in true }
         )
@@ -325,6 +370,8 @@ final class ModelManagerService: ObservableObject {
         prompt: String? = nil,
         dictionaryTermHints: [DictionaryTermHint] = [],
         normalizeNumbers: Bool? = nil,
+        purpose: TranscriptionRequestPurpose = .final,
+        sessionID: UUID? = nil,
         onProgress: @Sendable @escaping (String) -> Bool,
         onSourceProgress: @Sendable @escaping (TranscriptionSourceProgress) -> Bool
     ) async throws -> TranscriptionResult {
@@ -337,6 +384,8 @@ final class ModelManagerService: ObservableObject {
             prompt: prompt,
             dictionaryTermHints: dictionaryTermHints,
             normalizeNumbers: normalizeNumbers,
+            purpose: purpose,
+            sessionID: sessionID,
             onProgress: onProgress,
             onSourceProgress: onSourceProgress
         )
@@ -351,6 +400,8 @@ final class ModelManagerService: ObservableObject {
         prompt: String? = nil,
         dictionaryTermHints: [DictionaryTermHint] = [],
         normalizeNumbers: Bool? = nil,
+        purpose: TranscriptionRequestPurpose = .final,
+        sessionID: UUID? = nil,
         onProgress: @Sendable @escaping (String) -> Bool,
         onSourceProgress: @Sendable @escaping (TranscriptionSourceProgress) -> Bool
     ) async throws -> TranscriptionResult {
@@ -411,6 +462,8 @@ final class ModelManagerService: ObservableObject {
                 language: language,
                 prompt: prompt,
                 dictionaryTermHints: dictionaryTermHints,
+                purpose: purpose,
+                sessionID: sessionID,
                 onTextProgress: onProgress,
                 onSourceProgress: onSourceProgress
             ))

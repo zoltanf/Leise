@@ -258,6 +258,12 @@ final class DictationViewModel: ObservableObject {
             modelManager: modelManager,
             recentBufferProvider: { [weak audioRecordingService] maxDuration in
                 audioRecordingService?.getRecentBuffer(maxDuration: maxDuration) ?? []
+            },
+            fullBufferProvider: { [weak audioRecordingService] in
+                audioRecordingService?.getCurrentBuffer() ?? []
+            },
+            bufferDurationProvider: { [weak audioRecordingService] in
+                audioRecordingService?.totalBufferDuration ?? 0
             }
         )
         self.recentTranscriptionPaletteHandler = RecentTranscriptionPaletteHandler(
@@ -1009,7 +1015,10 @@ final class DictationViewModel: ObservableObject {
         guard !Task.isCancelled else { return }
         logger.info("Stop timing: stopRecording done elapsedMs=\(stopElapsedMs(), privacy: .public), previewTextLength=\(previewText.count, privacy: .public)")
         let liveSessionResultBeforePreviewFallback = await streamingHandler.finish()
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else {
+            streamingHandler.discardFinalPrecomputation()
+            return
+        }
         logger.info("Stop timing: streamingHandler.finish done elapsedMs=\(stopElapsedMs(), privacy: .public), resultTextLength=\(liveSessionResultBeforePreviewFallback?.text.count ?? -1, privacy: .public)")
         let liveSessionResult = liveSessionResultBeforePreviewFallback.map {
             StreamingHandler.resultPreferringStablePreviewIfNeeded($0, stablePreview: previewText)
@@ -1033,6 +1042,7 @@ final class DictationViewModel: ObservableObject {
 
         switch decision {
         case .discardTooShort:
+            streamingHandler.discardFinalPrecomputation()
             audioRecordingService.discardActiveRecoveryRecording()
             let errorMessage = String(localized: "Too short, hold the hotkey a bit longer")
             if let sessionID {
@@ -1045,6 +1055,7 @@ final class DictationViewModel: ObservableObject {
             )
             return
         case .discardNoSpeech:
+            streamingHandler.discardFinalPrecomputation()
             audioRecordingService.discardActiveRecoveryRecording()
             logger.info("Peak level too low (\(String(format: "%.4f", peakLevel))) - no speech detected")
             let errorMessage = String(localized: "No speech detected")
@@ -1074,6 +1085,7 @@ final class DictationViewModel: ObservableObject {
         guard !Task.isCancelled else { return }
         let usedLiveSessionResult = liveSessionResult != nil
         transcriptionTask = Task {
+            defer { self.streamingHandler.discardFinalPrecomputation() }
             do {
                 // Wait for browser URL resolution so URL-based profile overrides apply
                 await urlResolutionTask?.value
@@ -1113,7 +1125,8 @@ final class DictationViewModel: ObservableObject {
                         primaryCloudModelOverride: cloudModelOverride,
                         prompt: termsPrompt,
                         dictionaryTermHints: termHints,
-                        normalizeNumbers: effectiveNumberNormalizationOverride
+                        normalizeNumbers: effectiveNumberNormalizationOverride,
+                        sessionID: sessionID
                     )
                 }
                 let result = transcription.result
@@ -1225,15 +1238,23 @@ final class DictationViewModel: ObservableObject {
                 audioRecordingService.discardActiveRecoveryRecording()
                 soundService.play(.transcriptionSuccess, enabled: soundFeedbackEnabled)
                 let wordCount = text.split(separator: " ").count
+                let detectedLang = result.detectedLanguage ?? language
                 let statisticsToken = PerformanceMilestones.begin(.persistence)
                 usageStatisticsRecorder?.recordTranscription(
                     timestamp: completionTimestamp,
                     wordsCount: wordCount,
                     durationSeconds: audioDuration,
-                    appBundleIdentifier: activeApp.bundleId
+                    appName: activeApp.name,
+                    appBundleIdentifier: activeApp.bundleId,
+                    appDomain: activeApp.url.flatMap { URL(string: $0)?.host() },
+                    language: detectedLang,
+                    engine: result.engineUsed,
+                    model: modelDisplayName,
+                    rawText: result.text,
+                    processedText: text,
+                    pipelineSteps: pipelineSteps
                 )
                 PerformanceMilestones.end(statisticsToken)
-                let detectedLang = result.detectedLanguage ?? language
                 if let sessionID {
                     completeDictationSession(id: sessionID)
                 }
@@ -1274,7 +1295,8 @@ final class DictationViewModel: ObservableObject {
         primaryCloudModelOverride: String?,
         prompt: String?,
         dictionaryTermHints: [DictionaryTermHint],
-        normalizeNumbers: Bool?
+        normalizeNumbers: Bool?,
+        sessionID: UUID?
     ) async throws -> FinalTranscriptionOutput {
         let result = try await modelManager.transcribe(
             audioSamples: audioSamples,
@@ -1284,7 +1306,8 @@ final class DictationViewModel: ObservableObject {
             cloudModelOverride: primaryCloudModelOverride,
             prompt: prompt,
             dictionaryTermHints: dictionaryTermHints,
-            normalizeNumbers: normalizeNumbers
+            normalizeNumbers: normalizeNumbers,
+            sessionID: sessionID
         )
         return finalTranscriptionOutput(
             result: result,
@@ -1301,7 +1324,8 @@ final class DictationViewModel: ObservableObject {
         primaryCloudModelOverride: String?,
         prompt: String?,
         dictionaryTermHints: [DictionaryTermHint],
-        normalizeNumbers: Bool?
+        normalizeNumbers: Bool?,
+        sessionID: UUID?
     ) async throws -> FinalTranscriptionOutput {
         let performanceToken = PerformanceMilestones.begin(.finalTranscription)
         defer { PerformanceMilestones.end(performanceToken) }
@@ -1313,7 +1337,8 @@ final class DictationViewModel: ObservableObject {
             primaryCloudModelOverride: primaryCloudModelOverride,
             prompt: prompt,
             dictionaryTermHints: dictionaryTermHints,
-            normalizeNumbers: normalizeNumbers
+            normalizeNumbers: normalizeNumbers,
+            sessionID: sessionID
         )
     }
 
@@ -1407,7 +1432,7 @@ final class DictationViewModel: ObservableObject {
             cloudModelOverride: effectiveCloudModelOverride,
             normalizeNumbers: effectiveNumberNormalizationOverride
         )
-        lastStreamingParams = allowLiveTranscription ? params : nil
+        lastStreamingParams = params
         let dictionaryProviderId = params.engineOverrideId ?? params.providerId
         streamingHandler.start(
             streamPrompt: dictionaryService.getTermsForPrompt(providerId: dictionaryProviderId) ?? "",
@@ -1418,6 +1443,7 @@ final class DictationViewModel: ObservableObject {
             task: params.task,
             cloudModelOverride: params.cloudModelOverride,
             normalizeNumbers: params.normalizeNumbers,
+            sessionID: activeDictationSessionID,
             allowLiveTranscription: allowLiveTranscription,
             stateCheck: { [weak self] in self?.state == .recording }
         )
@@ -1426,8 +1452,8 @@ final class DictationViewModel: ObservableObject {
     /// Restart live streaming if the currently effective params differ from the ones
     /// used when `streamingHandler.start(...)` was last called. Called after URL
     /// resolution refines the rule, to keep live preview consistent with the final
-    /// transcription. No-op when recording already stopped, when live streaming was
-    /// disabled, or when no meaningful param changed.
+    /// transcription and background final-transcription preparation. No-op when
+    /// recording already stopped or when no meaningful parameter changed.
     private func refreshLiveStreamingIfParamsChanged() {
         guard state == .recording else { return }
         guard let previous = lastStreamingParams else { return }

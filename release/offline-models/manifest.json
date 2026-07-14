@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "edition": "offline",
+  "models": [
+    {
+      "id": "parakeet-tdt-0.6b-v2",
+      "repository": "FluidInference/parakeet-tdt-0.6b-v2-coreml",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v3",
+      "repository": "FluidInference/parakeet-tdt-0.6b-v3-coreml",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "parakeet-ctc-110m-coreml",
+      "repository": "FluidInference/parakeet-ctc-110m-coreml",
+      "license": "CC-BY-4.0"
+    }
+  ]
+}

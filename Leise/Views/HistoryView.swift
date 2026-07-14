@@ -304,11 +304,18 @@ private struct RecordRow: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                if record.wasPostProcessed {
+                if record.wasInitiallyPostProcessed {
                     Image(systemName: "sparkles")
                         .font(.caption2)
                         .foregroundStyle(.purple.opacity(0.7))
-                        .help(String(localized: "AI enhanced"))
+                        .help(String(localized: "Auto-enhanced"))
+                }
+
+                if record.wasManuallyEdited {
+                    Image(systemName: "pencil")
+                        .font(.caption2)
+                        .foregroundStyle(.orange.opacity(0.8))
+                        .help(String(localized: "Manually edited"))
                 }
 
                 Spacer()
@@ -388,6 +395,9 @@ private struct RecordDetailView: View {
                         ForEach(record.pipelineStepList, id: \.self) { step in
                             metadataTag(step, icon: "gearshape.2")
                         }
+                    }
+                    if record.wasManuallyEdited {
+                        metadataTag("\(record.manualEditCount) \(String(localized: "manual edits"))", icon: "pencil")
                     }
                 }
             }
@@ -488,10 +498,15 @@ private struct RecordDetailView: View {
                             Divider()
                                 .padding(.horizontal, 10)
 
-                            // AI Processed section
+                            // Final text section
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Label(String(localized: "AI Processed"), systemImage: "sparkles")
+                                    Label(
+                                        record.wasManuallyEdited
+                                            ? String(localized: "Final Text")
+                                            : String(localized: "AI Processed"),
+                                        systemImage: record.wasManuallyEdited ? "pencil" : "sparkles"
+                                    )
                                         .font(.caption.bold())
                                         .foregroundStyle(.secondary)
                                     Spacer()

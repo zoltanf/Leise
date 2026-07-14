@@ -147,7 +147,7 @@ struct AdvancedSettingsView: View {
                         ServiceContainer.shared.usageStatisticsService.clearUsageStatistics()
                     }
                 } message: {
-                    Text(String(localized: "This will permanently delete aggregate word, app, time-saved, and activity statistics. Transcription history entries are unchanged."))
+                    Text(String(localized: "This will permanently delete all aggregate activity, application, habit, and quality statistics. Transcription history entries are unchanged."))
                 }
             }
         }

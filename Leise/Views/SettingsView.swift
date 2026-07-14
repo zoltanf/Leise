@@ -111,8 +111,12 @@ struct SettingsView: View {
         }
         .onChange(of: homeViewModel.navigateToHistory) { _, navigate in
             if navigate {
+                let historyViewModel = ServiceContainer.shared.historyViewModel
+                historyViewModel.selectedAppFilter = homeViewModel.pendingHistoryAppBundleIdentifier
+                historyViewModel.selectedTimeRange = homeViewModel.pendingHistoryTimeRange
                 selectedTab = .history
                 homeViewModel.navigateToHistory = false
+                homeViewModel.clearPendingHistoryNavigation()
             }
         }
         .onReceive(settingsNavigation.$request.compactMap { $0 }) { request in
