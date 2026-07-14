@@ -1,110 +1,169 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-SCHEME="Leise"
-PROJECT="Leise.xcodeproj"
-APP_NAME="Leise"
-BUILD_DIR="$PROJECT_DIR/build-release"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+derived_data_path="$repo_root/.build/DerivedData-Release"
+artifact_dir="$repo_root/dist"
+app_name="Leise"
+architecture="arm64"
+create_dmg=true
+clean=true
 
-SIGN=false
-for arg in "$@"; do
-  case "$arg" in
-    --sign) SIGN=true ;;
-    *) echo "Unknown option: $arg"; echo "Usage: $0 [--sign]"; exit 1 ;;
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/build-release-local.sh [options]
+
+Build, ad-hoc sign, verify, and package a local Leise release.
+
+Options:
+  --no-dmg       Create only the ZIP archive and checksum file.
+  --no-clean     Reuse the existing Release DerivedData directory.
+  -h, --help     Show this help message.
+
+Artifacts are written to dist/. No Apple Developer account is required.
+The resulting app is ad-hoc signed and is not notarized by Apple.
+EOF
+}
+
+log() {
+  printf '[leise-release-build] %s\n' "$*"
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --no-dmg)
+      create_dmg=false
+      ;;
+    --no-clean)
+      clean=false
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'Unknown option: %s\n\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
   esac
+  shift
 done
 
-echo "=== Leise Local Release Build ==="
-echo "Sign: $SIGN"
-echo ""
+for command in xcodebuild codesign ditto shasum plutil; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    log "error: required command is unavailable: $command"
+    exit 1
+  fi
+done
 
-# Clean previous build
-rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"
+version="$(bash "$repo_root/scripts/version.sh" current)"
+build_number="$(git -C "$repo_root" rev-list --count HEAD 2>/dev/null || true)"
+if [[ -z "$build_number" || ! "$build_number" =~ ^[0-9]+$ ]]; then
+  build_number="$(date -u '+%Y%m%d%H%M')"
+fi
 
-# Resolve packages
-echo "--- Resolving Swift packages ---"
+if [[ -n "$(git -C "$repo_root" status --short)" ]]; then
+  log "warning: building from a working tree with uncommitted changes"
+fi
+
+if [[ "$clean" == true ]]; then
+  rm -rf -- "$derived_data_path"
+fi
+rm -rf -- "$artifact_dir"
+mkdir -p "$derived_data_path" "$artifact_dir"
+
+log "version: $version ($build_number)"
+log "architecture: $architecture"
+log "resolving Swift packages"
 xcodebuild -resolvePackageDependencies \
-  -project "$PROJECT_DIR/$PROJECT" \
-  -scheme "$SCHEME"
+  -project "$repo_root/Leise.xcodeproj" \
+  -scheme Leise \
+  -derivedDataPath "$derived_data_path"
 
-# Build
-echo "--- Building Release ---"
+build_log="$derived_data_path/release-build.log"
+log "building Release configuration"
 set -o pipefail
-xcodebuild -project "$PROJECT_DIR/$PROJECT" \
-  -scheme "$SCHEME" \
+xcodebuild build \
+  -project "$repo_root/Leise.xcodeproj" \
+  -scheme Leise \
   -configuration Release \
-  -derivedDataPath "$BUILD_DIR" \
-  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath "$derived_data_path" \
+  -destination "platform=macOS,arch=$architecture" \
+  ARCHS="$architecture" \
+  ONLY_ACTIVE_ARCH=YES \
   ENABLE_CODE_COVERAGE=NO \
-  CODE_SIGN_IDENTITY="-" \
+  ENABLE_DEBUG_DYLIB=NO \
+  MARKETING_VERSION="$version" \
+  CURRENT_PROJECT_VERSION="$build_number" \
+  CODE_SIGN_IDENTITY='-' \
   CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGNING_ALLOWED=NO | tee "$BUILD_DIR/build.log"
+  CODE_SIGNING_ALLOWED=NO | tee "$build_log"
 
-bash "$PROJECT_DIR/scripts/check_first_party_warnings.sh" "$BUILD_DIR/build.log"
+bash "$repo_root/scripts/check_first_party_warnings.sh" "$build_log"
 
-APP_PATH="$BUILD_DIR/Build/Products/Release/$APP_NAME.app"
-
-if [ ! -d "$APP_PATH" ]; then
-  echo "ERROR: App not found at $APP_PATH"
+app_path="$derived_data_path/Build/Products/Release/$app_name.app"
+if [[ ! -d "$app_path" ]]; then
+  log "error: built application was not found: $app_path"
   exit 1
 fi
 
-bash "$PROJECT_DIR/scripts/check_release_binary_instrumentation.sh" "$APP_PATH/Contents/MacOS/$APP_NAME"
+log "applying local ad-hoc signature"
+find "$app_path" -name '._*' -delete
+xattr -cr "$app_path" >/dev/null 2>&1 || true
+codesign \
+  --force \
+  --deep \
+  --sign - \
+  --timestamp=none \
+  "$app_path"
+codesign \
+  --force \
+  --sign - \
+  --timestamp=none \
+  --entitlements "$repo_root/Leise/Resources/Leise.entitlements" \
+  "$app_path"
 
-echo "--- App built at $APP_PATH ---"
+bash "$repo_root/scripts/test-release-build.sh" "$app_path" "$version" "$build_number"
 
-# Sign if requested
-if [ "$SIGN" = true ]; then
-  echo "--- Signing App ---"
+artifact_base="$app_name-$version-macOS-$architecture"
+zip_path="$artifact_dir/$artifact_base.zip"
+dmg_path="$artifact_dir/$artifact_base.dmg"
+checksum_path="$artifact_dir/$app_name-$version-SHA256SUMS.txt"
 
-  # Find Developer ID identity
-  IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/')
-  if [ -z "$IDENTITY" ]; then
-    echo "ERROR: No Developer ID Application certificate found in keychain"
+log "creating ZIP archive"
+ditto -c -k --sequesterRsrc --keepParent "$app_path" "$zip_path"
+
+artifacts=("$(basename "$zip_path")")
+if [[ "$create_dmg" == true ]]; then
+  if ! command -v hdiutil >/dev/null 2>&1; then
+    log "error: hdiutil is required to create the DMG"
     exit 1
   fi
-  echo "Using identity: $IDENTITY"
 
-  find "$APP_PATH" -name '._*' -delete
-  xattr -cr "$APP_PATH"
-  codesign --force --deep --options runtime --timestamp \
-    --entitlements "$PROJECT_DIR/Leise/Resources/Leise.entitlements" \
-    --sign "$IDENTITY" \
-    "$APP_PATH"
-  codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-  echo "--- App signed ---"
+  dmg_root="$derived_data_path/dmg-root"
+  rm -rf -- "$dmg_root"
+  mkdir -p "$dmg_root"
+  ditto "$app_path" "$dmg_root/$app_name.app"
+  ln -s /Applications "$dmg_root/Applications"
+
+  log "creating DMG archive"
+  hdiutil create \
+    -volname "$app_name $version" \
+    -srcfolder "$dmg_root" \
+    -ov \
+    -format UDZO \
+    "$dmg_path" >/dev/null
+  artifacts+=("$(basename "$dmg_path")")
 fi
 
-# Create DMG
-echo "--- Creating DMG ---"
+(
+  cd "$artifact_dir"
+  shasum -a 256 "${artifacts[@]}" > "$(basename "$checksum_path")"
+)
 
-# Check for dmgbuild
-if ! command -v dmgbuild &> /dev/null; then
-  echo "dmgbuild not found. Installing..."
-  pip3 install dmgbuild
-fi
-
-VERSION=$(defaults read "$APP_PATH/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "dev")
-DMG_NAME="Leise-v${VERSION}.dmg"
-DMG_PATH="$BUILD_DIR/$DMG_NAME"
-
-dmgbuild -s "$PROJECT_DIR/.github/dmgbuild-settings.py" \
-  -D app="$APP_NAME" \
-  -D app_path="$APP_PATH" \
-  -D background="$PROJECT_DIR/.github/dmg-background.png" \
-  "$APP_NAME" \
-  "$DMG_PATH"
-
-echo ""
-echo "=== Done ==="
-echo "DMG: $DMG_PATH"
-
-if [ "$SIGN" = true ]; then
-  echo ""
-  echo "To notarize, run:"
-  echo "  xcrun notarytool submit \"$DMG_PATH\" --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID --password YOUR_APP_PASSWORD --wait"
-  echo "  xcrun stapler staple \"$DMG_PATH\""
-fi
+log "artifacts ready"
+for artifact in "${artifacts[@]}" "$(basename "$checksum_path")"; do
+  printf '  %s\n' "$artifact_dir/$artifact"
+done
+log "note: these artifacts are ad-hoc signed and not Apple-notarized"

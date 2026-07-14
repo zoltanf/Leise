@@ -1001,7 +1001,7 @@ final class DictationViewModel: ObservableObject {
         let liveSessionResultBeforePreviewFallback = await streamingHandler.finish()
         guard !Task.isCancelled else { return }
         logger.info("Stop timing: streamingHandler.finish done elapsedMs=\(stopElapsedMs(), privacy: .public), resultTextLength=\(liveSessionResultBeforePreviewFallback?.text.count ?? -1, privacy: .public)")
-        var liveSessionResult = liveSessionResultBeforePreviewFallback.map {
+        let liveSessionResult = liveSessionResultBeforePreviewFallback.map {
             StreamingHandler.resultPreferringStablePreviewIfNeeded($0, stablePreview: previewText)
         }
         let hasPreviewText = !previewText.isEmpty

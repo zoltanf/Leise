@@ -44,6 +44,13 @@ open Leise.xcodeproj
 Select the `Leise` scheme in Xcode and build. Swift package dependencies resolve through
 Xcode.
 
+For the normal local development workflow, build, install, verify, and launch an ad-hoc
+signed copy without an Apple Developer account:
+
+```sh
+./scripts/build-and-run.sh
+```
+
 Run checks with a full Xcode installation selected:
 
 ```sh
@@ -58,6 +65,16 @@ xcodebuild test \
 
 swift test --package-path LeiseComponents
 ```
+
+Create an ad-hoc-signed local Release build, ZIP, DMG, and SHA-256 checksums with:
+
+```sh
+./scripts/build-release-local.sh
+```
+
+Artifacts are written to `dist/`. These community builds are not notarized by Apple, so a
+downloaded copy may need its quarantine attribute removed before first launch. See
+[docs/releasing.md](docs/releasing.md) for versioning and GitHub Releases publication.
 
 ## Forking and remotes
 

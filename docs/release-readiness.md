@@ -26,4 +26,8 @@ Leise is currently a green-field, local-only macOS application. There is no supp
 
 ## Distribution
 
-Until the product scope and persistence model stabilize, builds are for local testing only. Public release channels, upgrade guarantees, and compatibility commitments will be defined later.
+Leise is distributed through GitHub Releases as an Apple Silicon ZIP and DMG. Builds are
+ad-hoc signed because the project does not currently use a paid Apple Developer account;
+they are therefore not notarized, may trigger Gatekeeper quarantine, and do not provide a
+stable Apple signing identity across releases. The local publisher and limitations are
+documented in `docs/releasing.md`.
