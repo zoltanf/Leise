@@ -4361,7 +4361,7 @@
 					<string>@executable_path/../Frameworks</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>1.6.0</string>
+				<string>1.7.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.leise.mac</string>
 				<key>PRODUCT_NAME</key>
@@ -4414,7 +4414,7 @@
 					<string>@executable_path/../Frameworks</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>1.6.0</string>
+				<string>1.7.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.leise.mac</string>
 				<key>PRODUCT_NAME</key>
