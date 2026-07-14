@@ -36,14 +36,13 @@ while IFS= read -r script_file; do
   bash -n "$script_file"
 done < <(git ls-files 'scripts/*.sh')
 
-log "running Python script tests"
-python3 scripts/test_assemble_community_plugin_registry.py
-python3 scripts/test_plugin_registry_metadata.py
-
 log "checking release instrumentation helper"
 run_if_exists scripts/check_release_binary_instrumentation.sh --self-test
 
-log "running Plugin SDK tests"
-swift test --package-path TypeWhisperPluginSDK
+log "checking static built-in architecture"
+run_if_exists scripts/check_static_components.sh
+
+log "running component package tests"
+swift test --package-path LeiseComponents
 
 log "preflight complete"

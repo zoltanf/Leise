@@ -1,0 +1,6 @@
+configuration,artifact,bytes,path
+Debug,app_bundle,43667456,.build/DerivedData-Performance/Build/Products/Debug/Leise.app
+Debug,executable,40344,.build/DerivedData-Performance/Build/Products/Debug/Leise.app/Contents/MacOS/Leise
+Debug,debug_dylib,39400144,.build/DerivedData-Performance/Build/Products/Debug/Leise.app/Contents/MacOS/Leise.debug.dylib
+Release,app_bundle,30011392,.build/DerivedData-Performance/Build/Products/Release/Leise.app
+Release,executable,25903496,.build/DerivedData-Performance/Build/Products/Release/Leise.app/Contents/MacOS/Leise

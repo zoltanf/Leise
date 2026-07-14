@@ -1,0 +1,10 @@
+configuration,kind,run,elapsed_ms,exit_code,log
+Debug,clean,1,29348.090,0,debug-clean-run-01.log
+Debug,clean,2,18630.308,0,debug-clean-run-02.log
+Debug,clean,3,17333.395,0,debug-clean-run-03.log
+Release,clean,1,113293.704,0,release-clean-run-01.log
+Release,clean,2,108692.260,0,release-clean-run-02.log
+Release,clean,3,108498.666,0,release-clean-run-03.log
+Debug,incremental,1,4861.664,0,debug-incremental-run-01.log
+Debug,incremental,2,4665.360,0,debug-incremental-run-02.log
+Debug,incremental,3,4760.622,0,debug-incremental-run-03.log

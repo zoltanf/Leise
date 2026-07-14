@@ -563,14 +563,14 @@ final class HotkeyService: ObservableObject, @unchecked Sendable {
 
         // Try CGEventTap first - it can suppress hotkey events from reaching other apps
         if setupEventTap(includeMouse: suppressingMouse) {
-            logger.info("Using head-inserted CGEventTap for hotkey monitoring with NSEvent compatibility fallback")
-            installEventMonitors(includeMouse: includeMouse)
+            logger.info("Using head-inserted CGEventTap for global hotkey monitoring with a local NSEvent monitor")
+            installLocalEventMonitor(includeMouse: includeMouse)
             return
         }
 
         // Fallback: NSEvent monitors (no event suppression)
         logger.info("CGEventTap unavailable, falling back to NSEvent monitors (hotkey events will pass through)")
-        installEventMonitors(includeMouse: includeMouse)
+        installFallbackEventMonitors(includeMouse: includeMouse)
     }
 
     private var needsMouseEventMonitoring: Bool {
@@ -596,7 +596,7 @@ final class HotkeyService: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func installEventMonitors(includeMouse: Bool) {
+    private func installFallbackEventMonitors(includeMouse: Bool) {
         let mask = eventMonitorMask(includeMouse: includeMouse)
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in

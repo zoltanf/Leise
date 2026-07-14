@@ -2,19 +2,19 @@
 set -euo pipefail
 
 # =============================================================================
-# TypeWhisper Screenshot Automation
+# Leise Screenshot Automation
 # Takes screenshots of the Settings tabs + indicator window
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-SCHEME="TypeWhisper"
-PROJECT="TypeWhisper.xcodeproj"
-APP_NAME="TypeWhisper"
+SCHEME="Leise"
+PROJECT="Leise.xcodeproj"
+APP_NAME="Leise"
 BUILD_DIR="$PROJECT_DIR/build-screenshots"
 DEFAULT_SCREENSHOT_DIR="$PROJECT_DIR/.github/screenshots"
 SCREENSHOT_DIR="${SCREENSHOT_DIR:-$DEFAULT_SCREENSHOT_DIR}"
-PROCESS_NAME="TypeWhisper"
+PROCESS_NAME="Leise"
 SCREENSHOT_LOCALE="${SCREENSHOT_LOCALE:-auto}"
 
 # Tabs to screenshot (in sidebar order)
@@ -22,19 +22,17 @@ SCREENSHOT_LOCALE="${SCREENSHOT_LOCALE:-auto}"
 TABS=(
     "home|Home|Start"
     "general|General|Allgemein"
-    "recording|Recording|Aufnahme"
-    "recovery|Recovery|Recovery"
+    "appearance|Appearance|Erscheinungsbild"
     "hotkeys|Hotkeys|Tastenkürzel"
-    "file-transcription|File Transcription|Datei-Transkription"
     "recorder|Recorder|Recorder"
+    "recovery|Recovery|Recovery"
+    "file-transcription|File Transcription|Datei-Transkription"
     "history|History|Verlauf"
     "dictionary|Dictionary|Wörterbuch"
-    "snippets|Snippets|Snippets"
-    "workflows|Workflows|Workflows"
-    "premium|Premium|Premium"
-    "plugins|Integrations|Integrationen"
+    "profiles|Profiles|Profile"
+    "processing|Processing|Verarbeitung"
+    "filler-words|Filler Word Cleanup|Füllwörter entfernen"
     "advanced|Advanced|Erweitert"
-    "license|License|Lizenz"
     "about|About|Über"
 )
 
@@ -90,7 +88,7 @@ let windowList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as NS
 for case let w as NSDictionary in windowList {
     let owner = w["kCGWindowOwnerName"] as? String ?? ""
     let name = w["kCGWindowName"] as? String ?? ""
-    if owner == "TypeWhisper" && titles.contains(name) {
+    if owner == "Leise" && titles.contains(name) {
         print(w["kCGWindowNumber"] as? Int ?? 0)
         break
     }
@@ -109,7 +107,7 @@ for case let w as NSDictionary in windowList {
     let bounds = w["kCGWindowBounds"] as? NSDictionary ?? [:]
     let width = bounds["Width"] as? Int ?? 0
     let height = bounds["Height"] as? Int ?? 0
-    if owner == "TypeWhisper" && width == 500 && height == 500 {
+    if owner == "Leise" && width == 500 && height == 500 {
         print(w["kCGWindowNumber"] as? Int ?? 0)
         break
     }
@@ -124,7 +122,7 @@ import Foundation
 let windowList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as NSArray? ?? []
 for case let w as NSDictionary in windowList {
     let owner = w["kCGWindowOwnerName"] as? String ?? ""
-    if owner == "TypeWhisper" {
+    if owner == "Leise" {
         let id = w["kCGWindowNumber"] as? Int ?? 0
         let layer = w["kCGWindowLayer"] as? Int ?? 0
         let name = w["kCGWindowName"] as? String ?? "(none)"
@@ -180,7 +178,7 @@ EOF
 open_settings_via_menu() {
     osascript <<'EOF'
 tell application "System Events"
-    tell process "TypeWhisper"
+    tell process "Leise"
         click menu bar item 1 of menu bar 2
         delay 0.3
         repeat with candidate in menu items of menu 1 of menu bar item 1 of menu bar 2
@@ -338,7 +336,7 @@ if [ "$EXPLORE" = true ]; then
     log "Exploring accessibility hierarchy"
     osascript <<'EXPLORE_EOF' 2>&1 || true
 tell application "System Events"
-    tell process "TypeWhisper"
+    tell process "Leise"
         tell window "Settings"
             set allElements to entire contents
             repeat with elem in allElements

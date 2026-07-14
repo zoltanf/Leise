@@ -1,0 +1,2 @@
+recorded_at_utc,commit,branch,dirty,source_tree_sha256,macos_version,xcode_version,architecture,cpu,memory_bytes
+"2026-07-13T20:33:46Z","4208303e36ee4bd6a0cefbc99308ffe4f8e2f38e","leise-foundation",true,d8f46638a50c7eaaf88e3b018109ba548c6db62e855e3b57cabe0b5386201987,"26.5.2","Xcode 26.6 Build version 17F113","arm64","Apple M1 Pro",34359738368

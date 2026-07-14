@@ -1,0 +1,10 @@
+configuration,artifact,bytes,path
+Debug,app_bundle,45027328,.build/DerivedData-Performance/Build/Products/Debug/Leise.app
+Debug,executable,40344,.build/DerivedData-Performance/Build/Products/Debug/Leise.app/Contents/MacOS/Leise
+Debug,debug_dylib,26901152,.build/DerivedData-Performance/Build/Products/Debug/Leise.app/Contents/MacOS/Leise.debug.dylib
+Debug,embedded_component,360448,.build/DerivedData-Performance/Build/Products/Debug/Leise.app/Contents/PlugIns/FillerWordsPlugin.bundle
+Debug,embedded_component,12931072,.build/DerivedData-Performance/Build/Products/Debug/Leise.app/Contents/PlugIns/ParakeetPlugin.bundle
+Release,app_bundle,31186944,.build/DerivedData-Performance/Build/Products/Release/Leise.app
+Release,executable,17198328,.build/DerivedData-Performance/Build/Products/Release/Leise.app/Contents/MacOS/Leise
+Release,embedded_component,270336,.build/DerivedData-Performance/Build/Products/Release/Leise.app/Contents/PlugIns/FillerWordsPlugin.bundle
+Release,embedded_component,9154560,.build/DerivedData-Performance/Build/Products/Release/Leise.app/Contents/PlugIns/ParakeetPlugin.bundle

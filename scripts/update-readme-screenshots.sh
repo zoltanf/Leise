@@ -31,12 +31,11 @@ esac
 # Format per row:
 #   "Alt text|filename.png|Alt text|filename.png|..."
 ROWS=(
-    "Home Dashboard|home.png|Recording|recording.png|Recovery|recovery.png"
-    "Hotkeys|hotkeys.png|Workflows|workflows.png|File Transcription|file-transcription.png"
-    "Recorder API|recorder.png|History|history.png|Dictionary|dictionary.png"
-    "Dictionary Term Packs|dictionary-term-packs.png|Snippets|snippets.png|Installed Integrations|plugins.png"
-    "Integration Marketplace|integrations-available.png|Premium|premium.png|License|license.png"
-    "General Settings|general.png|Advanced Settings|advanced.png|About|about.png"
+    "Home Dashboard|home.png|General Settings|general.png|Appearance|appearance.png"
+    "Hotkeys|hotkeys.png|Recorder|recorder.png|Recovery|recovery.png"
+    "File Transcription|file-transcription.png|History|history.png|Dictionary|dictionary.png"
+    "Profiles|profiles.png|Processing|processing.png|Filler Word Cleanup|filler-words.png"
+    "Advanced Settings|advanced.png|About|about.png"
 )
 
 html_escape() {

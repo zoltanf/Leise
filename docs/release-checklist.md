@@ -1,95 +1,36 @@
 # Release Checklist
 
-## Before the Stable Tag
+## Automated checks
 
-- `xcodebuild test -project TypeWhisper.xcodeproj -scheme TypeWhisper -destination 'platform=macOS,arch=arm64' -parallel-testing-enabled NO CODE_SIGN_IDENTITY='-' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO`
-- `swift test --package-path TypeWhisperPluginSDK`
-- `xcodebuild -project TypeWhisper.xcodeproj -scheme TypeWhisper -configuration Release -derivedDataPath build -destination 'generic/platform=macOS' CODE_SIGN_IDENTITY='-' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO`
+- `xcodebuild test -project Leise.xcodeproj -scheme Leise -destination 'platform=macOS,arch=arm64' -parallel-testing-enabled NO CODE_SIGN_IDENTITY='-' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO`
+- `bash scripts/check_static_components.sh`
+- `swift test --package-path LeiseComponents`
+- `xcodebuild -project Leise.xcodeproj -scheme Leise -configuration Release -derivedDataPath build -destination 'generic/platform=macOS' CODE_SIGN_IDENTITY='-' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO`
 - `bash scripts/check_first_party_warnings.sh build.log`
-- Review `README.md`, `SECURITY.md`, `docs/support-matrix.md`, `docs/release-readiness.md`, `TypeWhisperPluginSDK/Plugins/README.md`, and `TypeWhisperPluginSDK/README.md`
-- If README screenshots changed, run `scripts/update-readme-screenshots.sh`; otherwise verify the gallery with `scripts/update-readme-screenshots.sh --check`
-- Confirm marketplace plugin manifests and registry releases carry the current `sdkCompatibilityVersion`
-- Confirm `MARKETING_VERSION = 1.6.0` across the app, CLI, and widgets
-- Prepare or refresh `docs/release-notes/1.6.0.md`
-- If you want to edit the notes directly on GitHub, create or update the draft release for `v1.6.0` before pushing the tag
-- Otherwise the release workflow will publish `docs/release-notes/1.6.0.md` automatically when no release already exists
+- `bash scripts/check_release_binary_instrumentation.sh --self-test`
 
-## Before `1.6.0-rc1`
+## Manual smoke checks
 
-- Confirm `1.3.x` builds continue to use `plugins-v1.json`
-- Confirm `1.4.x`, `1.5.x`, `1.6.0-rc*`, `1.6.0` daily, and `1.6.0` stable builds use `plugins-community-v1.json`
-- Confirm community registry entries under `PluginRegistry/community-v1/` set `source` to `community`; omitted `source` values in published feeds must remain official marketplace entries
-- Keep community plugin submissions out of the `1.6` release scope unless they are already bundled or first-party
-- Smoke-test the Integrations hub grouped lists for Built-in, Marketplace, Community, and Manual plugin paths
-- Smoke-test the Installed, Discover, and Manual tabs at desktop and compact window sizes
-- Verify Discover search, the Community include/exclude checkbox, and the capability filter menu
-- Verify source, hosting, and multi-capability badges and filters for Local, Cloud, Transcription, LLM, Action, Memory, and combined-capability plugins
-- Verify manual `.bundle` installation, external bundle enable/disable, and incompatible bundle notices
-- Verify plugin update discovery still works for official and community registry entries
-- Verify Plugin SDK workflow snapshots expose names, triggers, behavior settings, output routing, and Local/Cloud-safe metadata without exposing SwiftData objects
+- Fresh install and onboarding
+- Microphone and Accessibility permission recovery
+- Push-to-talk, toggle, and hybrid dictation hotkeys
+- Parakeet v2/v3 model selection, download, loading, and transcription
+- Streaming preview and very short speech handling
+- Text insertion in plain-text, rich-text, browser, and code targets
+- Profile matching by application and website
+- History save, edit, retention, and export
+- Dictionary import/export, vocabulary hints, and term packs
+- File transcription, recorder, and failed-dictation recovery
+- Filler-word cleanup, spoken punctuation, and number normalization
+- Notch, Overlay, and Minimal indicators
+- Audio-device changes, including Bluetooth route changes
+- Media pause/resume and audio ducking during dictation
+- Error-log diagnostics export
 
-## RC Smoke Checks
+## Before tagging
 
-- Publish `1.6.0-rc*` on the `release-candidate` channel and daily builds on the `daily` channel
-- Stable builds must use only the default channel
-- Fresh install
-- Permission recovery
-- First dictation
-- File transcription
-- Workflow prompt action
-- Global LLM fallback list: add provider/model pairs, reject duplicates, reorder entries, remove entries, and preserve unavailable providers for repair
-- Inherited prompt/workflow LLM processing: verify unavailable, restore, rate-limit, network/API, and empty-result failures advance to the next entry; explicit workflow providers remain strict single calls; cancellation and total failure insert no text
-- Workflow setup step (cross-tab navigation)
-- History edit/export
-- Post-processing transparency in history and indicators
-- Workflow matching for app + URL, URL-only, app-only, direct hotkey, and fallback triggers
-- Global fallback workflow when no app- or URL-specific workflow matches
-- Notch, Overlay, and Minimal indicator styles
-- Transcript preview toggle for Notch and Overlay
-- Plugin enable/disable
-- Local model plugin settings: save and remove HuggingFace token, then verify download error copy for Qwen3, Granite, Voxtral, and Supertonic
-- Supertonic plugin: verify OpenRAIL-M license checkbox gates the first model download and that changed license revision requires re-acceptance
-- Gemma 4 plugin: verify E2B/E4B 4-bit download and load, and verify E4B 8-bit plus 26B-A4B remain visible but disabled with explanatory copy
-- Community term pack download and apply
-- Built-in term packs render localized metadata in English and German
-- App audio recording with separate tracks
-- System Audio Recorder settings: verify final transcript creation and live transcript preview are separate toggles, and recorder engine/model controls remain visible when live preview is off
-- Google Cloud Speech-to-Text plugin
-- Sound feedback settings (enable, disable, and custom sounds)
-- Non-blocking model download
-- Dictionary JSON export and import
-- Dictionary terms are forwarded to streaming providers (AssemblyAI, Soniox, SpeechAnalyzer) without breaking the session
-- Parakeet V2/V3 model version selection
-- Very short speech clips with and without actual speech
-- Streaming preview versus the no-speech guard
-- Media pause during recording (play music, start recording, verify pause, stop recording, verify resume)
-- Mouse button shortcut (configure and trigger dictation)
-- Remapped Hyperkey shortcut (record, stop, and prompt palette paths)
-- Fn hotkey in both press-and-release and press-and-hold strategies
-- Audio preview and recording after input-device changes, especially AirPods and Bluetooth profile switches
-- Audio recovery after Bluetooth route changes (verify no crash)
-- Auto-submit workflow behavior
-- Disable history saving (toggle off, dictate, verify no entry created)
-- STT and AI-processed text both shown in the history entry
-- Spoken feedback (TTS)
-  - Enable, choose a voice and speed via the System Voice plugin
-  - Verify the feedback is limited to transcription readback and does not narrate unrelated UI actions
-  - Toggle off and confirm silence
-- Per-request STT engine/model selection
-  - HTTP API: send `engine`/`model` in the `/v1/transcribe` request and verify the returned metadata
-  - CLI: `typewhisper transcribe --engine <id> --model <id>` against a running local server
-- Multilingual language hints
-  - Open the language picker, search, select multiple languages, verify the selected order and count
-  - Reorder the selected languages and confirm hint-aware engines receive the ordered list
-  - Confirm engines without language-hint support use the first selected language
-- Verify CLI and HTTP API locally
-- Upgrade from `1.5.0` with History, Workflows, Dictionary, Snippets, hotkeys, enabled plugins, and update channel preserved
-
-## Before `1.6.0`
-
-- Observe the latest `1.6.0-rc*` build on real machines for multiple days
-- No open P0/P1 bugs in the core workflow
-- Finalize release notes
-- RC and daily tags must not update Homebrew or trigger stable website messaging
-- Verify DMG, ZIP, and the `release-candidate` appcast entry with `minimumSystemVersion` set to `14.0`
-- Verify Homebrew and the stable appcast update only at the final `1.6.0`
+- Confirm the app contains only the two reviewed built-in components: Parakeet and filler-word cleanup.
+- Confirm removed product surfaces have no settings route, runtime service, target, entitlement, script, or documentation entry.
+- Review `README.md`, `SECURITY.md`, and `docs/support-matrix.md`.
+- Record launch, memory, dictation, and build measurements from the simplification plan.
+- Verify the DMG/ZIP and update feed metadata on a clean machine.

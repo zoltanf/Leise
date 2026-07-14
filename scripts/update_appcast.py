@@ -22,9 +22,9 @@ def ensure_channel(root: ET.Element) -> ET.Element:
         channel = ET.SubElement(root, "channel")
 
     fields = {
-        "title": "TypeWhisper Updates",
+        "title": "Leise Updates",
         "language": "en",
-        "description": "Stable, release candidate, and daily updates for TypeWhisper.",
+        "description": "Stable, release candidate, and daily updates for Leise.",
     }
     for tag, value in fields.items():
         element = channel.find(tag)

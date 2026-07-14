@@ -1,0 +1,4 @@
+configuration,kind,count,median_ms,p90_ms,minimum_ms,maximum_ms
+Debug,clean,3,20872.619,21477.304,20818.213,21628.475
+Debug,incremental,3,5456.714,5534.885,5428.871,5554.428
+Release,clean,3,116504.663,117081.173,114963.091,117225.301

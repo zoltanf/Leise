@@ -1,0 +1,78 @@
+scenario,run,pid,name,type,start_timestamp,end_timestamp,duration_ms
+first-use-short-v3,1,74736,process_started,event,2026-07-13 22:47:08.489404+0200,,
+first-use-short-v3,1,74736,hotkey_registration,interval,2026-07-13 22:47:08.512154+0200,2026-07-13 22:47:08.542726+0200,30.572
+first-use-short-v3,1,74736,hotkey_ready,event,2026-07-13 22:47:08.542740+0200,,
+first-use-short-v3,1,74736,retained_store_opening,interval,2026-07-13 22:47:08.542846+0200,2026-07-13 22:47:08.565930+0200,23.084
+first-use-short-v3,1,74736,service_container_construction,interval,2026-07-13 22:47:08.493146+0200,2026-07-13 22:47:08.679433+0200,186.287
+first-use-short-v3,1,74736,app_initialization,interval,2026-07-13 22:47:08.493117+0200,2026-07-13 22:47:08.679773+0200,186.656
+first-use-short-v3,1,74736,model_selection_restoration,interval,2026-07-13 22:47:08.779232+0200,2026-07-13 22:47:08.779293+0200,0.061
+first-use-short-v3,1,74736,ui_ready,event,2026-07-13 22:47:08.876555+0200,,
+first-use-short-v3,1,74736,process_to_ui_ready,interval,2026-07-13 22:47:08.488975+0200,2026-07-13 22:47:08.876570+0200,387.595
+first-use-short-v3,1,74736,model_preparation,interval,2026-07-13 22:47:08.873902+0200,2026-07-13 22:47:09.183692+0200,309.790
+first-use-short-v3,1,74736,final_transcription,interval,2026-07-13 22:47:08.873877+0200,2026-07-13 22:47:09.471983+0200,598.106
+first-use-short-v3,2,75293,process_started,event,2026-07-13 22:47:12.815817+0200,,
+first-use-short-v3,2,75293,hotkey_registration,interval,2026-07-13 22:47:12.830767+0200,2026-07-13 22:47:12.860301+0200,29.534
+first-use-short-v3,2,75293,hotkey_ready,event,2026-07-13 22:47:12.860320+0200,,
+first-use-short-v3,2,75293,retained_store_opening,interval,2026-07-13 22:47:12.860346+0200,2026-07-13 22:47:12.898744+0200,38.398
+first-use-short-v3,2,75293,service_container_construction,interval,2026-07-13 22:47:12.818653+0200,2026-07-13 22:47:12.999430+0200,180.777
+first-use-short-v3,2,75293,app_initialization,interval,2026-07-13 22:47:12.818632+0200,2026-07-13 22:47:12.999491+0200,180.859
+first-use-short-v3,2,75293,model_selection_restoration,interval,2026-07-13 22:47:13.166087+0200,2026-07-13 22:47:13.166173+0200,0.086
+first-use-short-v3,2,75293,ui_ready,event,2026-07-13 22:47:13.167583+0200,,
+first-use-short-v3,2,75293,process_to_ui_ready,interval,2026-07-13 22:47:12.815511+0200,2026-07-13 22:47:13.167600+0200,352.089
+first-use-short-v3,2,75293,model_preparation,interval,2026-07-13 22:47:13.206770+0200,2026-07-13 22:47:13.389398+0200,182.628
+first-use-short-v3,2,75293,final_transcription,interval,2026-07-13 22:47:13.206740+0200,2026-07-13 22:47:13.570407+0200,363.667
+first-use-short-v3,3,75801,process_started,event,2026-07-13 22:47:16.801220+0200,,
+first-use-short-v3,3,75801,hotkey_registration,interval,2026-07-13 22:47:16.813179+0200,2026-07-13 22:47:16.841341+0200,28.162
+first-use-short-v3,3,75801,hotkey_ready,event,2026-07-13 22:47:16.841357+0200,,
+first-use-short-v3,3,75801,retained_store_opening,interval,2026-07-13 22:47:16.841384+0200,2026-07-13 22:47:16.859940+0200,18.556
+first-use-short-v3,3,75801,service_container_construction,interval,2026-07-13 22:47:16.803976+0200,2026-07-13 22:47:16.962007+0200,158.031
+first-use-short-v3,3,75801,app_initialization,interval,2026-07-13 22:47:16.803954+0200,2026-07-13 22:47:16.962087+0200,158.133
+first-use-short-v3,3,75801,model_selection_restoration,interval,2026-07-13 22:47:17.124009+0200,2026-07-13 22:47:17.124070+0200,0.061
+first-use-short-v3,3,75801,ui_ready,event,2026-07-13 22:47:17.125124+0200,,
+first-use-short-v3,3,75801,process_to_ui_ready,interval,2026-07-13 22:47:16.800939+0200,2026-07-13 22:47:17.125132+0200,324.193
+first-use-short-v3,3,75801,model_preparation,interval,2026-07-13 22:47:17.148520+0200,2026-07-13 22:47:17.317639+0200,169.119
+first-use-short-v3,3,75801,final_transcription,interval,2026-07-13 22:47:17.148492+0200,2026-07-13 22:47:17.494022+0200,345.530
+first-use-short-v3,4,76353,process_started,event,2026-07-13 22:47:20.770989+0200,,
+first-use-short-v3,4,76353,hotkey_registration,interval,2026-07-13 22:47:20.783480+0200,2026-07-13 22:47:20.813388+0200,29.908
+first-use-short-v3,4,76353,hotkey_ready,event,2026-07-13 22:47:20.813404+0200,,
+first-use-short-v3,4,76353,retained_store_opening,interval,2026-07-13 22:47:20.813429+0200,2026-07-13 22:47:20.830674+0200,17.245
+first-use-short-v3,4,76353,service_container_construction,interval,2026-07-13 22:47:20.774052+0200,2026-07-13 22:47:20.931203+0200,157.151
+first-use-short-v3,4,76353,app_initialization,interval,2026-07-13 22:47:20.774024+0200,2026-07-13 22:47:20.931267+0200,157.243
+first-use-short-v3,4,76353,model_selection_restoration,interval,2026-07-13 22:47:21.090181+0200,2026-07-13 22:47:21.090245+0200,0.064
+first-use-short-v3,4,76353,ui_ready,event,2026-07-13 22:47:21.091297+0200,,
+first-use-short-v3,4,76353,process_to_ui_ready,interval,2026-07-13 22:47:20.770698+0200,2026-07-13 22:47:21.091307+0200,320.609
+first-use-short-v3,4,76353,model_preparation,interval,2026-07-13 22:47:21.112729+0200,2026-07-13 22:47:21.275652+0200,162.923
+first-use-short-v3,4,76353,final_transcription,interval,2026-07-13 22:47:21.112702+0200,2026-07-13 22:47:21.452171+0200,339.469
+first-use-short-v3,5,76866,process_started,event,2026-07-13 22:47:24.736901+0200,,
+first-use-short-v3,5,76866,hotkey_registration,interval,2026-07-13 22:47:24.750881+0200,2026-07-13 22:47:24.780380+0200,29.499
+first-use-short-v3,5,76866,hotkey_ready,event,2026-07-13 22:47:24.780398+0200,,
+first-use-short-v3,5,76866,retained_store_opening,interval,2026-07-13 22:47:24.780430+0200,2026-07-13 22:47:24.798946+0200,18.516
+first-use-short-v3,5,76866,service_container_construction,interval,2026-07-13 22:47:24.739713+0200,2026-07-13 22:47:24.903732+0200,164.019
+first-use-short-v3,5,76866,app_initialization,interval,2026-07-13 22:47:24.739690+0200,2026-07-13 22:47:24.903812+0200,164.122
+first-use-short-v3,5,76866,model_selection_restoration,interval,2026-07-13 22:47:25.066614+0200,2026-07-13 22:47:25.066679+0200,0.065
+first-use-short-v3,5,76866,ui_ready,event,2026-07-13 22:47:25.067773+0200,,
+first-use-short-v3,5,76866,process_to_ui_ready,interval,2026-07-13 22:47:24.736569+0200,2026-07-13 22:47:25.067786+0200,331.217
+first-use-short-v3,5,76866,model_preparation,interval,2026-07-13 22:47:25.090089+0200,2026-07-13 22:47:25.248139+0200,158.050
+first-use-short-v3,5,76866,final_transcription,interval,2026-07-13 22:47:25.090060+0200,2026-07-13 22:47:25.417980+0200,327.920
+first-use-short-v3,6,77437,process_started,event,2026-07-13 22:47:28.787848+0200,,
+first-use-short-v3,6,77437,hotkey_registration,interval,2026-07-13 22:47:28.803234+0200,2026-07-13 22:47:28.839477+0200,36.243
+first-use-short-v3,6,77437,hotkey_ready,event,2026-07-13 22:47:28.839501+0200,,
+first-use-short-v3,6,77437,retained_store_opening,interval,2026-07-13 22:47:28.839547+0200,2026-07-13 22:47:28.863572+0200,24.025
+first-use-short-v3,6,77437,service_container_construction,interval,2026-07-13 22:47:28.791369+0200,2026-07-13 22:47:28.966475+0200,175.106
+first-use-short-v3,6,77437,app_initialization,interval,2026-07-13 22:47:28.791346+0200,2026-07-13 22:47:28.966537+0200,175.191
+first-use-short-v3,6,77437,model_selection_restoration,interval,2026-07-13 22:47:29.044017+0200,2026-07-13 22:47:29.044068+0200,0.051
+first-use-short-v3,6,77437,ui_ready,event,2026-07-13 22:47:29.131475+0200,,
+first-use-short-v3,6,77437,process_to_ui_ready,interval,2026-07-13 22:47:28.787448+0200,2026-07-13 22:47:29.131486+0200,344.038
+first-use-short-v3,6,77437,model_preparation,interval,2026-07-13 22:47:29.130734+0200,2026-07-13 22:47:29.309270+0200,178.536
+first-use-short-v3,6,77437,final_transcription,interval,2026-07-13 22:47:29.130710+0200,2026-07-13 22:47:29.495447+0200,364.737
+first-use-short-v3,7,77937,process_started,event,2026-07-13 22:47:32.722136+0200,,
+first-use-short-v3,7,77937,hotkey_registration,interval,2026-07-13 22:47:32.736631+0200,2026-07-13 22:47:32.765415+0200,28.784
+first-use-short-v3,7,77937,hotkey_ready,event,2026-07-13 22:47:32.765433+0200,,
+first-use-short-v3,7,77937,retained_store_opening,interval,2026-07-13 22:47:32.765461+0200,2026-07-13 22:47:32.783402+0200,17.941
+first-use-short-v3,7,77937,service_container_construction,interval,2026-07-13 22:47:32.724443+0200,2026-07-13 22:47:32.890348+0200,165.905
+first-use-short-v3,7,77937,app_initialization,interval,2026-07-13 22:47:32.724426+0200,2026-07-13 22:47:32.890412+0200,165.986
+first-use-short-v3,7,77937,model_selection_restoration,interval,2026-07-13 22:47:33.049920+0200,2026-07-13 22:47:33.049985+0200,0.065
+first-use-short-v3,7,77937,ui_ready,event,2026-07-13 22:47:33.051019+0200,,
+first-use-short-v3,7,77937,process_to_ui_ready,interval,2026-07-13 22:47:32.721900+0200,2026-07-13 22:47:33.051027+0200,329.127
+first-use-short-v3,7,77937,model_preparation,interval,2026-07-13 22:47:33.074278+0200,2026-07-13 22:47:33.239343+0200,165.065
+first-use-short-v3,7,77937,final_transcription,interval,2026-07-13 22:47:33.074249+0200,2026-07-13 22:47:33.411536+0200,337.287

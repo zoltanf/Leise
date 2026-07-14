@@ -4,36 +4,27 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 derived_data_path="$repo_root/.build/DerivedData-Dev"
 install_dir="$HOME/Applications"
-installed_app="$install_dir/TypeWhisper-Dev.app"
+installed_app="$install_dir/Leise.app"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister"
 
 log() {
-  printf '[typewhisper-dev-build] %s\n' "$*"
+  printf '[leise-dev-build] %s\n' "$*"
 }
 
-quit_running_typewhisper() {
+quit_running_leise() {
   local pids
-  pids="$(running_dev_typewhisper_pids)"
+  pids="$(running_dev_leise_pids)"
   if [[ -z "$pids" ]]; then
     return
   fi
 
-  log "quitting running TypeWhisper-Dev before rebuilding"
-  osascript -e 'tell application id "com.typewhisper.mac.dev" to quit' >/dev/null 2>&1 || true
-
-  for _ in {1..20}; do
-    if [[ -z "$(running_dev_typewhisper_pids)" ]]; then
-      return
-    fi
-    sleep 0.25
-  done
-
+  log "quitting only development Leise processes before rebuilding"
   while IFS= read -r pid; do
     [[ -n "$pid" ]] || continue
     kill -TERM "$pid" >/dev/null 2>&1 || true
-  done <<< "$(running_dev_typewhisper_pids)"
+  done <<< "$pids"
   for _ in {1..20}; do
-    if [[ -z "$(running_dev_typewhisper_pids)" ]]; then
+    if [[ -z "$(running_dev_leise_pids)" ]]; then
       return
     fi
     sleep 0.25
@@ -42,25 +33,25 @@ quit_running_typewhisper() {
   while IFS= read -r pid; do
     [[ -n "$pid" ]] || continue
     kill -KILL "$pid" >/dev/null 2>&1 || true
-  done <<< "$(running_dev_typewhisper_pids)"
+  done <<< "$(running_dev_leise_pids)"
 }
 
-running_dev_typewhisper_pids() {
+running_dev_leise_pids() {
   local pid args
   while IFS= read -r pid; do
     args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
     case "$args" in
-      "$installed_app/Contents/MacOS/TypeWhisper"*)
+      "$installed_app/Contents/MacOS/Leise"*)
         printf '%s\n' "$pid"
         ;;
-      "$repo_root/.build/"*"/Build/Products/Debug/TypeWhisper.app/Contents/MacOS/TypeWhisper"*)
+      "$repo_root/.build/"*"/Build/Products/Debug/Leise.app/Contents/MacOS/Leise"*)
         printf '%s\n' "$pid"
         ;;
-      "$HOME/Library/Developer/Xcode/DerivedData/"*"/Build/Products/Debug/TypeWhisper.app/Contents/MacOS/TypeWhisper"*)
+      "$HOME/Library/Developer/Xcode/DerivedData/"*"/Build/Products/Debug/Leise.app/Contents/MacOS/Leise"*)
         printf '%s\n' "$pid"
         ;;
     esac
-  done < <(pgrep -x TypeWhisper 2>/dev/null || true)
+  done < <(pgrep -x Leise 2>/dev/null || true)
 }
 
 trash_if_present() {
@@ -87,7 +78,7 @@ write_build_marker() {
   built_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
   {
-    printf 'app=TypeWhisper-Dev\n'
+    printf 'app=Leise\n'
     printf 'repo=%s\n' "$repo_root"
     printf 'branch=%s\n' "${branch:-unknown}"
     printf 'commit=%s\n' "${commit:-unknown}"
@@ -108,29 +99,28 @@ trash_stale_dev_apps() {
       [[ "$app_path" != "$keep_app" ]] || continue
       trash_if_present "$app_path"
       log "trashed stale app: $app_path"
-    done < <(find "$root" -path '*/Build/Products/Debug/TypeWhisper.app' -type d -print0 2>/dev/null)
+    done < <(find "$root" -path '*/Build/Products/Debug/Leise.app' -type d -print0 2>/dev/null)
   done
 }
 
-quit_running_typewhisper
+quit_running_leise
 
 xcodebuild build \
-  -project "$repo_root/TypeWhisper.xcodeproj" \
-  -scheme TypeWhisper \
+  -project "$repo_root/Leise.xcodeproj" \
+  -scheme Leise \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$derived_data_path" \
+  ENABLE_DEBUG_DYLIB=NO \
   CODE_SIGN_IDENTITY='-' \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGNING_ALLOWED=NO
 
-"$repo_root/scripts/sync-dev-data-local.sh"
-
-app_path="$derived_data_path/Build/Products/Debug/TypeWhisper.app"
+app_path="$derived_data_path/Build/Products/Debug/Leise.app"
 if [[ ! -d "$app_path" ]]; then
-  app_path="$(find "$derived_data_path" -path '*/Build/Products/Debug/TypeWhisper.app' -type d -print -quit 2>/dev/null || true)"
+  app_path="$(find "$derived_data_path" -path '*/Build/Products/Debug/Leise.app' -type d -print -quit 2>/dev/null || true)"
 fi
 if [[ -z "${app_path:-}" ]] || [[ ! -d "$app_path" ]]; then
-  log "error: built TypeWhisper.app was not found"
+  log "error: built Leise.app was not found"
   exit 1
 fi
 
@@ -139,6 +129,20 @@ trash_if_present "$installed_app"
 ditto "$app_path" "$installed_app"
 write_build_marker "$installed_app"
 xattr -cr "$installed_app" >/dev/null 2>&1 || true
+codesign \
+  --force \
+  --deep \
+  --sign - \
+  --timestamp=none \
+  "$installed_app"
+codesign \
+  --force \
+  --sign - \
+  --timestamp=none \
+  --entitlements "$repo_root/Leise/Resources/Leise.entitlements" \
+  "$installed_app"
+codesign --verify --deep --strict --verbose=2 "$installed_app"
+"$repo_root/scripts/test-dev-build.sh" "$installed_app"
 
 trash_stale_dev_apps "$installed_app"
 

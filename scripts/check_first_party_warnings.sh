@@ -24,7 +24,7 @@ while IFS= read -r line; do
   esac
 done < <(
   grep -n "warning:" "$LOG_FILE" | grep -E \
-    "from project 'TypeWhisper'|/TypeWhisper/|/TypeWhisperTests/|/typewhisper-cli/|/TypeWhisperWidgetExtension/" || true
+    "from project 'Leise'|/Leise/|/LeiseTests/" || true
 )
 
 if [ "${#filtered[@]}" -gt 0 ]; then

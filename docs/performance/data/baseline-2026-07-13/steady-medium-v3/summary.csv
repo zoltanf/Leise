@@ -1,0 +1,15 @@
+category,metric,count,median,p90,minimum,maximum
+benchmark,elapsedMilliseconds,7,428.160,440.883,406.249,446.948
+benchmark,inferenceMilliseconds,7,427.972,440.711,406.097,446.784
+signpost,app_initialization,1,117.377,117.377,117.377,117.377
+signpost,built_in_component_construction,1,13.244,13.244,13.244,13.244
+signpost,final_transcription,7,428.103,440.837,406.208,446.902
+signpost,hotkey_registration,1,25.527,25.527,25.527,25.527
+signpost,model_preparation,7,0.008,0.008,0.006,0.009
+signpost,model_selection_restoration,1,0.095,0.095,0.095,0.095
+signpost,process_to_ui_ready,1,330.194,330.194,330.194,330.194
+signpost,retained_store_opening,1,15.175,15.175,15.175,15.175
+signpost,service_container_construction,1,117.272,117.272,117.272,117.272
+memory,rss_first_kb,1,22160.000,22160.000,22160.000,22160.000
+memory,rss_peak_kb,1,207520.000,207520.000,207520.000,207520.000
+memory,rss_settled_kb,1,205792.000,205792.000,205792.000,205792.000

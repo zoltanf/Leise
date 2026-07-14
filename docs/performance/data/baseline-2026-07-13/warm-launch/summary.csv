@@ -1,0 +1,12 @@
+metric,count,median,p90,minimum,maximum
+app_initialization,7,115.911,118.343,114.155,120.246
+built_in_component_construction,7,11.992,14.041,10.773,15.743
+hotkey_registration,7,25.095,27.056,23.405,29.057
+idle_rss_settled_kb,7,97664.000,97798.400,97440.000,97904.000
+launch_rss_peak_kb,7,97728.000,97817.600,97440.000,97904.000
+model_selection_restoration,7,0.100,0.104,0.094,0.107
+process_to_hotkey_ready,7,299.134,308.461,213.498,311.568
+process_to_ui_ready,7,319.616,324.886,303.232,326.645
+retained_store_opening,7,16.555,17.641,13.713,17.705
+service_container_construction,7,115.833,118.250,114.079,120.144
+service_container_initialization,7,37.947,41.490,34.864,41.674
