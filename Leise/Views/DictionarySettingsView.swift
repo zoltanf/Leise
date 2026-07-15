@@ -338,6 +338,8 @@ private struct DictionaryEngineSupportSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
 
             VStack(spacing: 8) {
                 ForEach(rows) { row in
@@ -439,6 +441,12 @@ private struct TermPackCardView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                if isActivated && viewModel.installedEntryCount(for: pack) != pack.entryCount {
+                    Text(String(localized: "\(viewModel.installedEntryCount(for: pack)) installed"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 if showUpdate {
                     Button(String(localized: "Update")) {
                         viewModel.updatePack(pack)
@@ -447,13 +455,26 @@ private struct TermPackCardView: View {
                     .buttonStyle(.bordered)
                 }
 
-                Toggle("", isOn: Binding(
-                    get: { isActivated },
-                    set: { _ in viewModel.togglePack(pack) }
-                ))
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .accessibilityLabel(String(localized: "Enable \(pack.name)"))
+                if isActivated {
+                    Label(String(localized: "Installed"), systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+
+                    Button(String(localized: "Remove"), role: .destructive) {
+                        viewModel.deactivatePack(pack)
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .help(String(localized: "Remove this pack and its unchanged entries"))
+                    .accessibilityLabel(String(localized: "Remove \(pack.name) pack"))
+                } else {
+                    Button(String(localized: "Install")) {
+                        viewModel.activatePack(pack)
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel(String(localized: "Install \(pack.name) pack"))
+                }
 
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -581,6 +602,24 @@ private struct DictionaryCardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 3))
             }
 
+            if let packName = row.packName {
+                Text(String(localized: "From \(packName)"))
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.1))
+                    .foregroundStyle(.secondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            } else if row.source == .autoLearned {
+                Text(String(localized: "Learned"))
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.1))
+                    .foregroundStyle(.secondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+
             Spacer()
 
             Toggle("", isOn: Binding(
@@ -591,6 +630,25 @@ private struct DictionaryCardView: View {
             .labelsHidden()
             .accessibilityLabel(String(localized: "Enable \(row.original)"))
             .onTapGesture {}
+
+            Button {
+                editEntry()
+            } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help(String(localized: "Edit"))
+            .accessibilityLabel(String(localized: "Edit \(row.original)"))
+
+            Button(role: .destructive) {
+                deleteEntry()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help(String(localized: "Remove from dictionary"))
+            .accessibilityLabel(String(localized: "Remove \(row.original) from dictionary"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -606,7 +664,6 @@ private struct DictionaryCardView: View {
         .onTapGesture {
             editEntry()
         }
-        .accessibilityElement(children: .combine)
         .contextMenu {
             Button(String(localized: "Edit")) {
                 editEntry()

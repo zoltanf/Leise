@@ -162,7 +162,8 @@ final class UsageStatisticsServiceTests: XCTestCase {
         XCTAssertEqual(homeViewModel.appsUsed, 1)
         XCTAssertEqual(homeViewModel.recentTranscriptions.count, 1)
         XCTAssertEqual(homeViewModel.recentTranscriptions.first?.finalText, "Retained history only")
-
+        XCTAssertEqual(homeViewModel.habitHeatmap.count, 42)
+        XCTAssertEqual(Set(homeViewModel.habitHeatmap.map(\.weekdayKey)).count, 7)
     }
 
     @MainActor

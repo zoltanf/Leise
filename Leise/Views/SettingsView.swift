@@ -44,7 +44,7 @@ struct SettingsView: View {
 
     private var destinations: [SettingsDestination] {
         [
-            SettingsDestination(tab: .home, title: String(localized: "Home"), systemImage: "house", badge: nil),
+            SettingsDestination(tab: .home, title: String(localized: "Dashboard"), systemImage: "house", badge: nil),
             SettingsDestination(tab: .general, title: String(localized: "General"), systemImage: "gear", badge: nil),
             SettingsDestination(tab: .appearance, title: String(localized: "Appearance"), systemImage: "paintbrush", badge: nil),
             SettingsDestination(tab: .hotkeys, title: String(localized: "Hotkeys"), systemImage: "keyboard", badge: nil),

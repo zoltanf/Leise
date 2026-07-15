@@ -424,8 +424,10 @@ final class DictionaryServiceTests: XCTestCase {
 
         let service = DictionaryService(appSupportDirectory: appSupportDirectory)
         service.addEntry(type: .correction, original: "teh", replacement: "the", caseSensitive: true)
+        service.addEntry(type: .term, original: "Azure")
         let viewModel = DictionaryViewModel(dictionaryService: service)
-        let row = try XCTUnwrap(viewModel.filteredEntryRows.first)
+        let row = try XCTUnwrap(viewModel.filteredEntryRows.first { $0.original == "teh" })
+        let termRow = try XCTUnwrap(viewModel.filteredEntryRows.first { $0.original == "Azure" })
 
         viewModel.setEntryEnabled(id: row.id, enabled: false)
         XCTAssertFalse(try XCTUnwrap(service.entries.first { $0.id == row.id }).isEnabled)
@@ -446,6 +448,8 @@ final class DictionaryServiceTests: XCTestCase {
 
         viewModel.deleteEntry(id: row.id)
         XCTAssertFalse(service.entries.contains { $0.id == row.id })
+        viewModel.deleteEntry(id: termRow.id)
+        XCTAssertFalse(service.entries.contains { $0.id == termRow.id })
     }
 
     @MainActor
@@ -521,6 +525,116 @@ final class DictionaryServiceTests: XCTestCase {
         XCTAssertEqual(service.entries.filter { $0.type == .term }.map(\.original), ["Cargo"])
         XCTAssertEqual(viewModel.activatedPackStates[v2.id]?.installedTerms, ["Cargo"])
         XCTAssertEqual(viewModel.activatedPackStates[v2.id]?.installedVersion, "1.1.0")
+    }
+
+    @MainActor
+    func testCustomizedPackEntriesRemainAfterPackRemoval() throws {
+        let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
+        defer { TestSupport.remove(appSupportDirectory) }
+
+        let service = DictionaryService(appSupportDirectory: appSupportDirectory)
+        let viewModel = DictionaryViewModel(dictionaryService: service)
+        let pack = TermPack(
+            id: "cloud-terms",
+            name: "Cloud Terms",
+            description: "Cloud terminology",
+            icon: "cloud",
+            terms: ["Azure"],
+            corrections: [
+                TermPackCorrection(original: "ngnix", replacement: "nginx")
+            ],
+            version: "1.0.0",
+            author: "Tests",
+            localizedNames: nil,
+            localizedDescriptions: nil
+        )
+
+        viewModel.activatePack(pack)
+
+        let term = try XCTUnwrap(service.entries.first { $0.original == "Azure" })
+        viewModel.startEditing(term)
+        viewModel.editOriginal = "Azure DevOps"
+        viewModel.saveEditing()
+
+        let correction = try XCTUnwrap(service.entries.first { $0.original == "ngnix" })
+        viewModel.startEditing(correction)
+        viewModel.editReplacement = "NGINX"
+        viewModel.saveEditing()
+
+        XCTAssertEqual(viewModel.activatedPackStates[pack.id]?.installedTerms, [])
+        XCTAssertEqual(viewModel.activatedPackStates[pack.id]?.installedCorrections, [])
+        XCTAssertEqual(viewModel.activatedPackStates[pack.id]?.excludedTerms, ["Azure"])
+        XCTAssertEqual(viewModel.activatedPackStates[pack.id]?.excludedCorrections.first?.original, "ngnix")
+
+        viewModel.deactivatePack(pack)
+
+        XCTAssertTrue(service.entries.contains { $0.original == "Azure DevOps" })
+        XCTAssertTrue(service.entries.contains {
+            $0.original == "ngnix" && $0.replacement == "NGINX"
+        })
+    }
+
+    @MainActor
+    func testDeletedPackEntriesStayExcludedAfterPackUpdate() throws {
+        let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
+        defer { TestSupport.remove(appSupportDirectory) }
+
+        let service = DictionaryService(appSupportDirectory: appSupportDirectory)
+        let viewModel = DictionaryViewModel(dictionaryService: service)
+        let v1 = TermPack(
+            id: "cloud-terms",
+            name: "Cloud Terms",
+            description: "Cloud terminology",
+            icon: "cloud",
+            terms: ["Azure"],
+            corrections: [TermPackCorrection(original: "ngnix", replacement: "nginx")],
+            version: "1.0.0",
+            author: "Tests",
+            localizedNames: nil,
+            localizedDescriptions: nil
+        )
+        let v2 = TermPack(
+            id: "cloud-terms",
+            name: "Cloud Terms",
+            description: "Cloud terminology",
+            icon: "cloud",
+            terms: ["Azure", "AWS"],
+            corrections: [TermPackCorrection(original: "ngnix", replacement: "nginx")],
+            version: "1.1.0",
+            author: "Tests",
+            localizedNames: nil,
+            localizedDescriptions: nil
+        )
+
+        viewModel.activatePack(v1)
+        viewModel.deleteEntry(try XCTUnwrap(service.entries.first { $0.original == "Azure" }))
+        viewModel.deleteEntry(try XCTUnwrap(service.entries.first { $0.original == "ngnix" }))
+        viewModel.updatePack(v2)
+
+        XCTAssertFalse(service.entries.contains { $0.original == "Azure" })
+        XCTAssertFalse(service.entries.contains { $0.original == "ngnix" })
+        XCTAssertTrue(service.entries.contains { $0.original == "AWS" })
+        XCTAssertEqual(viewModel.activatedPackStates[v2.id]?.excludedTerms, ["Azure"])
+        XCTAssertEqual(viewModel.activatedPackStates[v2.id]?.excludedCorrections.first?.original, "ngnix")
+    }
+
+    func testLegacyActivatedPackStateDecodesWithEmptyExclusions() throws {
+        let data = try XCTUnwrap(
+            """
+            [{
+              "packID": "legacy-pack",
+              "source": "community",
+              "installedVersion": "1.0.0",
+              "installedTerms": ["Azure"],
+              "installedCorrections": []
+            }]
+            """.data(using: .utf8)
+        )
+
+        let states = try JSONDecoder().decode([ActivatedTermPackState].self, from: data)
+
+        XCTAssertEqual(states.first?.excludedTerms, [])
+        XCTAssertEqual(states.first?.excludedCorrections, [])
     }
 
     @MainActor

@@ -9,8 +9,49 @@ struct ActivatedTermPackState: Codable {
     let packID: String
     let source: String
     let installedVersion: String?
-    let installedTerms: [String]
-    let installedCorrections: [TermPackCorrection]
+    var installedTerms: [String]
+    var installedCorrections: [TermPackCorrection]
+    var excludedTerms: [String]
+    var excludedCorrections: [TermPackCorrection]
+
+    init(
+        packID: String,
+        source: String,
+        installedVersion: String?,
+        installedTerms: [String],
+        installedCorrections: [TermPackCorrection],
+        excludedTerms: [String] = [],
+        excludedCorrections: [TermPackCorrection] = []
+    ) {
+        self.packID = packID
+        self.source = source
+        self.installedVersion = installedVersion
+        self.installedTerms = installedTerms
+        self.installedCorrections = installedCorrections
+        self.excludedTerms = excludedTerms
+        self.excludedCorrections = excludedCorrections
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case packID
+        case source
+        case installedVersion
+        case installedTerms
+        case installedCorrections
+        case excludedTerms
+        case excludedCorrections
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        packID = try container.decode(String.self, forKey: .packID)
+        source = try container.decode(String.self, forKey: .source)
+        installedVersion = try container.decodeIfPresent(String.self, forKey: .installedVersion)
+        installedTerms = try container.decode([String].self, forKey: .installedTerms)
+        installedCorrections = try container.decode([TermPackCorrection].self, forKey: .installedCorrections)
+        excludedTerms = try container.decodeIfPresent([String].self, forKey: .excludedTerms) ?? []
+        excludedCorrections = try container.decodeIfPresent([TermPackCorrection].self, forKey: .excludedCorrections) ?? []
+    }
 }
 
 private func dictionaryReplacementDisplayText(_ replacement: String) -> String {
@@ -25,6 +66,7 @@ struct DictionaryEntryRow: Identifiable, Equatable {
     let caseSensitive: Bool
     let isEnabled: Bool
     let source: DictionaryEntrySource
+    let packName: String?
     let termBoostingLabel: String
     let formattedCtcMinSimilarity: String
 
@@ -231,6 +273,7 @@ class DictionaryViewModel: ObservableObject {
                 ctcMinSimilarity: ctcMinSimilarity
             )
         } else if let entry = selectedEntry {
+            detachFromActivatedPacks(entry)
             dictionaryService.updateEntry(
                 entry,
                 original: editOriginal,
@@ -244,12 +287,13 @@ class DictionaryViewModel: ObservableObject {
     }
 
     func deleteEntry(_ entry: DictionaryEntry) {
+        detachFromActivatedPacks(entry)
         dictionaryService.deleteEntry(entry)
     }
 
     func deleteEntry(id: UUID) {
         guard let entry = entry(withID: id) else { return }
-        dictionaryService.deleteEntry(entry)
+        deleteEntry(entry)
     }
 
     func toggleEntry(_ entry: DictionaryEntry) {
@@ -292,6 +336,7 @@ class DictionaryViewModel: ObservableObject {
             caseSensitive: entry.caseSensitive,
             isEnabled: entry.isEnabled,
             source: entry.source,
+            packName: packName(owning: entry),
             termBoostingLabel: termBoostingLabel(for: entry.ctcMinSimilarity),
             formattedCtcMinSimilarity: formattedCtcMinSimilarity(entry.ctcMinSimilarity)
         )
@@ -367,6 +412,11 @@ class DictionaryViewModel: ObservableObject {
         activatedPackStates[pack.id] != nil
     }
 
+    func installedEntryCount(for pack: TermPack) -> Int {
+        guard let state = activatedPackStates[pack.id] else { return 0 }
+        return state.installedTerms.count + state.installedCorrections.count
+    }
+
     func togglePack(_ pack: TermPack) {
         if isPackActivated(pack) {
             deactivatePack(pack)
@@ -388,9 +438,12 @@ class DictionaryViewModel: ObservableObject {
     }
 
     func updatePack(_ pack: TermPack) {
-        guard isPackActivated(pack) else { return }
+        guard let previousState = activatedPackStates[pack.id] else { return }
         var nextStates = activatedPackStates
-        nextStates[pack.id] = makeActivatedState(for: pack)
+        nextStates[pack.id] = makeActivatedState(
+            for: pack,
+            preservingExclusionsFrom: previousState
+        )
         reconcileActivatedPacks(from: activatedPackStates, to: nextStates)
     }
 
@@ -430,13 +483,25 @@ class DictionaryViewModel: ObservableObject {
     // MARK: - Reconciliation
 
     /// Removes all pack-generated entries, then re-applies all active packs in deterministic order.
-    private func makeActivatedState(for pack: TermPack) -> ActivatedTermPackState {
-        ActivatedTermPackState(
+    private func makeActivatedState(
+        for pack: TermPack,
+        preservingExclusionsFrom previousState: ActivatedTermPackState? = nil
+    ) -> ActivatedTermPackState {
+        let excludedTerms = previousState?.excludedTerms ?? []
+        let excludedTermKeys = Set(excludedTerms.map(normalizedTermKey))
+        let excludedCorrections = previousState?.excludedCorrections ?? []
+        let excludedCorrectionKeys = Set(excludedCorrections.map(correctionKey))
+
+        return ActivatedTermPackState(
             packID: pack.id,
             source: pack.source.rawValue,
             installedVersion: pack.version,
-            installedTerms: pack.terms,
-            installedCorrections: pack.corrections
+            installedTerms: pack.terms.filter { !excludedTermKeys.contains(normalizedTermKey($0)) },
+            installedCorrections: pack.corrections.filter {
+                !excludedCorrectionKeys.contains(correctionKey($0))
+            },
+            excludedTerms: excludedTerms,
+            excludedCorrections: excludedCorrections
         )
     }
 
@@ -465,7 +530,9 @@ class DictionaryViewModel: ObservableObject {
                 source: state.source,
                 installedVersion: state.installedVersion,
                 installedTerms: actuallyAddedTerms,
-                installedCorrections: actuallyAddedCorrections
+                installedCorrections: actuallyAddedCorrections,
+                excludedTerms: state.excludedTerms,
+                excludedCorrections: state.excludedCorrections
             )
         }
 
@@ -537,6 +604,95 @@ class DictionaryViewModel: ObservableObject {
             dictionaryService.addEntries(items)
         }
         return newCorrections
+    }
+
+    private func packName(owning entry: DictionaryEntry) -> String? {
+        for state in activatedPackStates.values {
+            let ownsEntry: Bool
+            switch entry.type {
+            case .term:
+                ownsEntry = state.installedTerms.contains {
+                    normalizedTermKey($0) == normalizedTermKey(entry.original)
+                }
+            case .correction:
+                guard let replacement = entry.replacement else { continue }
+                ownsEntry = state.installedCorrections.contains {
+                    correctionKey($0) == correctionKey(
+                        original: entry.original,
+                        replacement: replacement
+                    )
+                }
+            }
+
+            if ownsEntry {
+                return resolvePack(id: state.packID)?.name
+            }
+        }
+        return nil
+    }
+
+    /// Detaches a customized or deleted entry from every active pack that contains it.
+    /// Persisting the exclusion prevents a later pack update from restoring the old entry.
+    private func detachFromActivatedPacks(_ entry: DictionaryEntry) {
+        var nextStates = activatedPackStates
+        var changed = false
+
+        for (packID, existingState) in activatedPackStates {
+            var state = existingState
+            let pack = resolvePack(id: packID)
+
+            switch entry.type {
+            case .term:
+                let entryKey = normalizedTermKey(entry.original)
+                let matchingPackTerm = pack?.terms.first { normalizedTermKey($0) == entryKey }
+                let ownsEntry = state.installedTerms.contains { normalizedTermKey($0) == entryKey }
+                guard ownsEntry || matchingPackTerm != nil else { continue }
+
+                state.installedTerms.removeAll { normalizedTermKey($0) == entryKey }
+                if !state.excludedTerms.contains(where: { normalizedTermKey($0) == entryKey }) {
+                    state.excludedTerms.append(matchingPackTerm ?? entry.original)
+                }
+                changed = true
+
+            case .correction:
+                guard let replacement = entry.replacement else { continue }
+                let entryKey = correctionKey(original: entry.original, replacement: replacement)
+                let matchingPackCorrection = pack?.corrections.first { correctionKey($0) == entryKey }
+                let ownsEntry = state.installedCorrections.contains { correctionKey($0) == entryKey }
+                guard ownsEntry || matchingPackCorrection != nil else { continue }
+
+                state.installedCorrections.removeAll { correctionKey($0) == entryKey }
+                if !state.excludedCorrections.contains(where: { correctionKey($0) == entryKey }) {
+                    state.excludedCorrections.append(
+                        matchingPackCorrection
+                            ?? TermPackCorrection(
+                                original: entry.original,
+                                replacement: replacement,
+                                caseSensitive: entry.caseSensitive
+                            )
+                    )
+                }
+                changed = true
+            }
+
+            nextStates[packID] = state
+        }
+
+        guard changed else { return }
+        activatedPackStates = nextStates
+        saveActivatedPackStates()
+    }
+
+    private func normalizedTermKey(_ term: String) -> String {
+        term.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func correctionKey(_ correction: TermPackCorrection) -> String {
+        correctionKey(original: correction.original, replacement: correction.replacement)
+    }
+
+    private func correctionKey(original: String, replacement: String) -> String {
+        "\(original.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())|\(replacement.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
     }
 
     // MARK: - Persistence

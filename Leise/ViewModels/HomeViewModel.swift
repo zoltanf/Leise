@@ -92,6 +92,7 @@ struct RankedCountItem: Identifiable, Equatable {
 
 struct HabitHeatmapPoint: Identifiable {
     var id: String { "\(weekdayIndex)-\(hourBucket)" }
+    var weekdayKey: String { String(weekdayIndex) }
     let weekdayIndex: Int
     let weekdayLabel: String
     let hourBucket: Int
@@ -424,7 +425,7 @@ final class HomeViewModel: ObservableObject {
 
     private func buildHeatmap(_ snapshots: [UsageStatisticsDaySnapshot]) -> [HabitHeatmapPoint] {
         let calendar = Calendar.current
-        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        let symbols = calendar.shortStandaloneWeekdaySymbols
         var counts: [String: Int] = [:]
         for snapshot in snapshots {
             let weekday = calendar.component(.weekday, from: snapshot.day)

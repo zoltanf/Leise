@@ -122,8 +122,13 @@ struct HomeSettingsView: View {
                 } else {
                     Chart(viewModel.chartData) { point in
                         BarMark(
-                            x: .value(String(localized: "Date"), point.date),
-                            y: .value(String(localized: "Words"), point.wordCount)
+                            x: .value(
+                                String(localized: "Date"),
+                                point.date,
+                                unit: activityCalendarComponent
+                            ),
+                            y: .value(String(localized: "Words"), point.wordCount),
+                            width: .ratio(0.68)
                         )
                         .foregroundStyle(Color.accentColor.gradient)
                         .cornerRadius(4)
@@ -140,6 +145,12 @@ struct HomeSettingsView: View {
                             }
                         }
                     }
+                    .chartXScale(
+                        range: .plotDimension(
+                            startPadding: activityChartEdgePadding,
+                            endPadding: activityChartEdgePadding
+                        )
+                    )
                     .frame(height: 220)
                     .accessibilityLabel(String(localized: "Words dictated over time"))
                 }
@@ -184,15 +195,27 @@ struct HomeSettingsView: View {
 
                 Chart(viewModel.habitHeatmap) { point in
                     RectangleMark(
-                        x: .value(String(localized: "Time"), point.hourLabel),
-                        y: .value(String(localized: "Weekday"), point.weekdayLabel)
+                        x: .value(String(localized: "Weekday"), point.weekdayKey),
+                        y: .value(String(localized: "Time"), point.hourLabel)
                     )
                     .foregroundStyle(heatmapColor(for: point.count))
                     .cornerRadius(3)
                     .accessibilityLabel("\(point.weekdayLabel), \(point.hourLabel):00")
                     .accessibilityValue("\(point.count) \(String(localized: "dictations"))")
                 }
-                .chartYScale(domain: Array(heatmapWeekdayDomain.reversed()))
+                .chartXScale(domain: heatmapWeekdayDomain)
+                .chartXAxis {
+                    AxisMarks(values: heatmapWeekdayDomain) { value in
+                        AxisGridLine()
+                        AxisValueLabel {
+                            if let key = value.as(String.self),
+                               let label = heatmapWeekdayLabel(for: key) {
+                                Text(label)
+                            }
+                        }
+                    }
+                }
+                .chartYScale(domain: heatmapHourDomain)
                 .frame(height: 210)
                 .accessibilityLabel(String(localized: "Dictations by weekday and time of day"))
             }
@@ -693,6 +716,18 @@ struct HomeSettingsView: View {
         }
     }
 
+    private var activityCalendarComponent: Calendar.Component {
+        switch viewModel.chartGranularity {
+        case .day: .day
+        case .week: .weekOfYear
+        case .month: .month
+        }
+    }
+
+    private var activityChartEdgePadding: CGFloat {
+        viewModel.selectedTimePeriod == .allTime ? 16 : 0
+    }
+
     private func activityLabel(_ date: Date) -> String {
         switch viewModel.chartGranularity {
         case .day: date.formatted(.dateTime.month(.abbreviated).day())
@@ -703,8 +738,16 @@ struct HomeSettingsView: View {
 
     private var heatmapWeekdayDomain: [String] {
         (0..<7).compactMap { index in
-            viewModel.habitHeatmap.first(where: { $0.weekdayIndex == index })?.weekdayLabel
+            viewModel.habitHeatmap.first(where: { $0.weekdayIndex == index })?.weekdayKey
         }
+    }
+
+    private func heatmapWeekdayLabel(for key: String) -> String? {
+        viewModel.habitHeatmap.first(where: { $0.weekdayKey == key })?.weekdayLabel
+    }
+
+    private var heatmapHourDomain: [String] {
+        stride(from: 0, through: 20, by: 4).map { String(format: "%02d", $0) }
     }
 
     private func heatmapColor(for count: Int) -> Color {
@@ -825,7 +868,7 @@ private struct StatCard: View {
                     .lineLimit(1)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 96)
+        .frame(maxWidth: .infinity, minHeight: 96, alignment: .top)
         .padding(.vertical, 12)
         .background(.quaternary.opacity(0.3))
         .clipShape(RoundedRectangle(cornerRadius: 8))
