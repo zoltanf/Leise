@@ -630,6 +630,55 @@ final class AudioDeviceServiceCompatibilityTests: XCTestCase {
         XCTAssertEqual(service.previewError, .incompatible(.cannotSetDevice))
     }
 
+    func testStartPreviewWithoutConnectedMicrophoneReportsUnavailable() {
+        let service = AudioDeviceService(
+            initialInputDevices: [],
+            monitorDeviceChanges: false,
+            probeCompatibilities: false
+        )
+        service.hasMicrophonePermissionOverride = true
+
+        service.startPreview()
+
+        XCTAssertFalse(service.isPreviewActive)
+        XCTAssertEqual(service.previewError, .unavailable)
+    }
+
+    func testStartPreviewWithoutPermissionReportsPermissionError() {
+        let service = AudioDeviceService(
+            initialInputDevices: [
+                AudioInputDevice(deviceID: AudioDeviceID(1), name: "Built-in Mic", uid: "built-in")
+            ],
+            monitorDeviceChanges: false,
+            probeCompatibilities: false
+        )
+        service.hasMicrophonePermissionOverride = false
+
+        service.startPreview()
+
+        XCTAssertFalse(service.isPreviewActive)
+        XCTAssertEqual(service.previewError, .permissionDenied)
+    }
+
+    func testStartPreviewSystemDefaultFailureReportsError() {
+        let service = AudioDeviceService(
+            initialInputDevices: [
+                AudioInputDevice(deviceID: AudioDeviceID(1), name: "Built-in Mic", uid: "built-in")
+            ],
+            monitorDeviceChanges: false,
+            probeCompatibilities: false
+        )
+        service.hasMicrophonePermissionOverride = true
+        service.startPreviewOverride = { _ in
+            throw NSError(domain: "MicrophonePreviewTests", code: 1)
+        }
+
+        service.startPreview()
+
+        XCTAssertFalse(service.isPreviewActive)
+        XCTAssertEqual(service.previewError, .previewFailed)
+    }
+
     func testSelectingIncompatibleDeviceRevertsToPreviousSelection() {
         UserDefaults.standard.set("built-in", forKey: UserDefaultsKeys.selectedInputDeviceUID)
         let devices = [
@@ -920,6 +969,29 @@ final class AudioDeviceServiceCompatibilityTests: XCTestCase {
         XCTAssertEqual(service.inputDevicePriorityList.map(\.uid), ["usb-input", "built-in"])
         XCTAssertEqual(service.selectedDeviceUID, "usb-input")
         XCTAssertEqual(try savedInputDevicePriorityList().map(\.uid), ["usb-input", "built-in"])
+    }
+
+    func testRemovingDisconnectedPriorityItemsKeepsConnectedFallbacks() throws {
+        let builtIn = AudioInputDevice(deviceID: AudioDeviceID(1), name: "Built-in Mic", uid: "built-in")
+        UserDefaults.standard.set(
+            try JSONEncoder().encode([
+                AudioInputDevicePriorityItem(uid: "missing-usb", name: "USB Mic"),
+                AudioInputDevicePriorityItem(uid: "built-in", name: "Built-in Mic"),
+                AudioInputDevicePriorityItem(uid: "missing-headset", name: "Headset")
+            ]),
+            forKey: UserDefaultsKeys.inputDevicePriorityList
+        )
+        let service = AudioDeviceService(
+            initialInputDevices: [builtIn],
+            monitorDeviceChanges: false,
+            probeCompatibilities: false
+        )
+
+        service.removeDisconnectedInputDevicePriorityItems()
+
+        XCTAssertEqual(service.inputDevicePriorityList.map(\.uid), ["built-in"])
+        XCTAssertEqual(service.selectedDeviceUID, "built-in")
+        XCTAssertEqual(try savedInputDevicePriorityList().map(\.uid), ["built-in"])
     }
 
     func testSelectingPrimaryInputDeviceReplacesMigratedFallbackList() throws {

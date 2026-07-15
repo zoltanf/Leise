@@ -62,13 +62,15 @@ enum SelectedInputDeviceError: LocalizedError, Sendable, Equatable {
     case unavailable
     case incompatible(AudioInputDeviceCompatibilityIssue)
     case routingConflict
+    case permissionDenied
+    case previewFailed
 
     var errorDescription: String? {
         switch self {
         case .unavailable:
             return localizedAppText(
-                "Selected input device is no longer available.",
-                de: "Das ausgewählte Eingabegerät ist nicht mehr verfügbar."
+                "No connected microphone is available.",
+                de: "Kein verbundenes Mikrofon ist verfügbar."
             )
         case .incompatible(let issue):
             return issue.detailText
@@ -76,6 +78,16 @@ enum SelectedInputDeviceError: LocalizedError, Sendable, Equatable {
             return localizedAppText(
                 "The selected microphone conflicts with your current audio routing. Disconnect Bluetooth or choose a different input.",
                 de: "Das ausgewählte Mikrofon kollidiert mit deiner aktuellen Audio-Route. Trenne Bluetooth oder wähle ein anderes Eingabegerät."
+            )
+        case .permissionDenied:
+            return localizedAppText(
+                "Microphone access is required to test an input device.",
+                de: "Zum Testen eines Eingabegeräts ist Mikrofonzugriff erforderlich."
+            )
+        case .previewFailed:
+            return localizedAppText(
+                "The microphone test could not be started. Choose another input device and try again.",
+                de: "Der Mikrofontest konnte nicht gestartet werden. Wähle ein anderes Eingabegerät und versuche es erneut."
             )
         }
     }
@@ -88,6 +100,10 @@ enum SelectedInputDeviceError: LocalizedError, Sendable, Equatable {
             return "incompatible:\(issue.diagnosticsValue)"
         case .routingConflict:
             return "routingConflict"
+        case .permissionDenied:
+            return "permissionDenied"
+        case .previewFailed:
+            return "previewFailed"
         }
     }
 }
@@ -470,6 +486,12 @@ final class AudioDeviceService: ObservableObject, @unchecked Sendable {
         setInputDevicePriorityList(inputDevicePriorityList.filter { $0.uid != item.uid })
     }
 
+    func removeDisconnectedInputDevicePriorityItems() {
+        setInputDevicePriorityList(
+            inputDevicePriorityList.filter(isInputDevicePriorityItemAvailable)
+        )
+    }
+
     func moveInputDevicePriorityItems(from source: IndexSet, to destination: Int) {
         guard !source.isEmpty else { return }
 
@@ -535,6 +557,12 @@ final class AudioDeviceService: ObservableObject, @unchecked Sendable {
         previewError = nil
         guard hasMicrophonePermission else {
             logger.warning("Microphone permission not granted, cannot start preview")
+            previewError = .permissionDenied
+            return
+        }
+        guard !inputDevices.isEmpty else {
+            logger.warning("No connected microphone available, cannot start preview")
+            previewError = .unavailable
             return
         }
 
@@ -598,7 +626,9 @@ final class AudioDeviceService: ObservableObject, @unchecked Sendable {
                 }
                 outputVolumeGuard.restoreIfRaised(reason: "preview-start-override-failed")
                 outputVolumeGuard.clear()
-                previewError = resolvedInputSelection.hasExplicitDeviceSelection ? .incompatible(.engineStartFailed) : nil
+                previewError = resolvedInputSelection.hasExplicitDeviceSelection
+                    ? .incompatible(.engineStartFailed)
+                    : .previewFailed
                 isPreviewActive = false
             }
             return
@@ -679,6 +709,8 @@ final class AudioDeviceService: ObservableObject, @unchecked Sendable {
             if let uid = resolvedInputSelection.deviceUID {
                 markInputDeviceCompatibility(.incompatible(.engineStartFailed), uid: uid)
                 previewError = .incompatible(.engineStartFailed)
+            } else {
+                previewError = .previewFailed
             }
             cleanupAfterFailedPreviewStart(engine)
         }

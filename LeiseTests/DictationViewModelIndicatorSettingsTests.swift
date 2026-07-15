@@ -891,7 +891,14 @@ final class MenuBarGroupingTests: XCTestCase {
     func testSettingsPreferencePagesUseExpectedOrder() {
         XCTAssertEqual(
             SettingsSidebarLayout.preferenceTabs,
-            [.general, .parakeet, .fillerWords, .hotkeys, .appearance, .advanced, .errorLog]
+            [.general, .parakeet, .hotkeys, .appearance, .advanced, .errorLog]
+        )
+    }
+
+    func testDictionaryIncludesFillerWordsTab() {
+        XCTAssertEqual(
+            DictionaryViewModel.FilterTab.allCases,
+            [.all, .terms, .corrections, .fillerWords, .termPacks]
         )
     }
 }

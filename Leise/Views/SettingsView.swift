@@ -3,7 +3,7 @@ import AppKit
 
 enum SettingsTab: Hashable {
     case home, general, appearance, recording, hotkeys, recorder
-    case dictationRecovery, fileTranscription, history, dictionary, profiles, parakeet, fillerWords, advanced, errorLog, about
+    case dictationRecovery, fileTranscription, history, dictionary, profiles, parakeet, advanced, errorLog, about
 }
 
 enum SettingsSidebarLayout {
@@ -12,7 +12,6 @@ enum SettingsSidebarLayout {
     static let preferenceTabs: [SettingsTab] = [
         .general,
         .parakeet,
-        .fillerWords,
         .hotkeys,
         .appearance,
         .advanced,
@@ -68,12 +67,6 @@ struct SettingsView: View {
                 tab: .parakeet,
                 title: String(localized: "Processing"),
                 systemImage: "cpu",
-                badge: nil
-            ),
-            SettingsDestination(
-                tab: .fillerWords,
-                title: String(localized: "Filler Word Cleanup"),
-                systemImage: "text.badge.minus",
                 badge: nil
             ),
             SettingsDestination(tab: .advanced, title: String(localized: "Advanced"), systemImage: "gearshape.2", badge: nil),
@@ -166,8 +159,6 @@ struct SettingsView: View {
             ProfilesSettingsView()
         case .parakeet:
             ParakeetSettingsPage()
-        case .fillerWords:
-            FillerWordCleanupSettingsPage()
         case .advanced:
             AdvancedSettingsView()
         case .errorLog:
@@ -366,19 +357,40 @@ struct RecordingSettingsView: View {
     @ViewBuilder
     private var microphonePriorityEditor: some View {
         if shouldShowMicrophonePriorityList {
-            LabeledContent(String(localized: "Microphone Priority")) {
+            LabeledContent(String(localized: "Fallback Order")) {
                 VStack(alignment: .trailing, spacing: 6) {
                     microphonePriorityList
                         .frame(maxWidth: 560, alignment: .leading)
 
-                    microphonePriorityAddMenu
+                    HStack(spacing: 12) {
+                        if disconnectedMicrophoneCount > 1 {
+                            Button(String(localized: "Remove Disconnected")) {
+                                audioDevice.removeDisconnectedInputDevicePriorityItems()
+                            }
+                            .buttonStyle(.link)
+                            .controlSize(.small)
+                        }
+
+                        Spacer()
+
+                        if !audioDevice.inputDevicePriorityCandidates.isEmpty {
+                            microphonePriorityAddMenu
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-        } else {
-            HStack {
-                Spacer()
+        } else if !audioDevice.inputDevicePriorityCandidates.isEmpty {
+            LabeledContent(String(localized: "Fallback Microphones")) {
                 microphonePriorityAddMenu
+            }
+        }
+    }
+
+    private var disconnectedMicrophoneCount: Int {
+        audioDevice.inputDevicePriorityList.reduce(into: 0) { count, item in
+            if !audioDevice.isInputDevicePriorityItemAvailable(item) {
+                count += 1
             }
         }
     }
@@ -422,22 +434,18 @@ struct RecordingSettingsView: View {
 
     private var microphonePriorityAddMenu: some View {
         Menu {
-            if audioDevice.inputDevicePriorityCandidates.isEmpty {
-                Text(String(localized: "No more microphones"))
-            } else {
-                ForEach(audioDevice.inputDevicePriorityCandidates) { device in
-                    Button(audioDevice.displayName(for: device)) {
-                        audioDevice.addInputDeviceToPriorityList(device)
-                    }
+            ForEach(audioDevice.inputDevicePriorityCandidates) { device in
+                Button(audioDevice.displayName(for: device)) {
+                    audioDevice.addInputDeviceToPriorityList(device)
                 }
             }
         } label: {
-            Label(String(localized: "Add Microphone"), systemImage: "plus")
+            Label(String(localized: "Add Fallback"), systemImage: "plus")
                 .font(.callout)
         }
         .menuStyle(.borderlessButton)
         .controlSize(.small)
-        .help(String(localized: "Add Microphone"))
+        .help(String(localized: "Add a fallback microphone"))
     }
 
     private func microphonePriorityRow(index: Int, item: AudioInputDevicePriorityItem) -> some View {
@@ -472,12 +480,12 @@ struct RecordingSettingsView: View {
             Button {
                 audioDevice.removeInputDevicePriorityItem(item)
             } label: {
-                Image(systemName: "minus.circle")
+                Image(systemName: "trash")
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .font(.system(size: 13))
-            .help(String(localized: "Remove microphone"))
+            .help(String(localized: "Forget microphone"))
         }
         .padding(.vertical, 3)
         .frame(minHeight: 24)
@@ -538,8 +546,12 @@ struct RecordingSettingsView: View {
             }
 
             Section(String(localized: "Microphone")) {
-                Picker(String(localized: "Input Device"), selection: inputDeviceSelectionBinding) {
-                    Text(String(localized: "System Default")).tag(nil as String?)
+                Picker(String(localized: "Primary Microphone"), selection: inputDeviceSelectionBinding) {
+                    Text(audioDevice.inputDevices.isEmpty
+                        ? String(localized: "No Microphone Available")
+                        : String(localized: "System Default")
+                    )
+                    .tag(nil as String?)
                     Divider()
                     ForEach(audioDevice.inputDevices) { device in
                         Text(audioDevice.displayName(for: device)).tag(device.uid as String?)
@@ -547,6 +559,21 @@ struct RecordingSettingsView: View {
                 }
 
                 microphonePriorityEditor
+
+                if shouldShowMicrophonePriorityList {
+                    Text(String(localized: "Leise tries connected microphones from top to bottom. Disconnected microphones are kept so they work again when reconnected."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if audioDevice.inputDevices.isEmpty {
+                    Label(
+                        String(localized: "No connected microphones detected. Connect a microphone to choose or test it."),
+                        systemImage: "mic.slash"
+                    )
+                    .foregroundStyle(.orange)
+                    .font(.caption)
+                }
 
                 if let message = audioDevice.selectedDeviceStatusMessage {
                     Label(message, systemImage: "exclamationmark.triangle")
@@ -580,7 +607,10 @@ struct RecordingSettingsView: View {
                         audioDevice.startPreview()
                     }
                 }
-                .disabled(!audioDevice.isPreviewActive && dictation.needsMicPermission)
+                .disabled(
+                    !audioDevice.isPreviewActive
+                        && (dictation.needsMicPermission || audioDevice.inputDevices.isEmpty)
+                )
 
                 if let error = audioDevice.previewError {
                     Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")

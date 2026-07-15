@@ -85,7 +85,7 @@ class DictionaryViewModel: ObservableObject {
 
     // Filter
     enum FilterTab: Int, CaseIterable {
-        case all, terms, corrections, termPacks
+        case all, terms, corrections, fillerWords, termPacks
     }
 
     enum TermBoostingMode: String, CaseIterable, Identifiable {
@@ -142,7 +142,7 @@ class DictionaryViewModel: ObservableObject {
             return entries.filter { $0.type == .term }
         case .corrections:
             return entries.filter { $0.type == .correction }
-        case .termPacks:
+        case .termPacks, .fillerWords:
             return []
         }
     }

@@ -44,11 +44,17 @@ public struct ParakeetComponent: @unchecked Sendable {
 
 public enum ParakeetComponentFactory {
     @MainActor
-    public static func make(store: any ParakeetStore) -> ParakeetComponent {
+    public static func make(
+        store: any ParakeetStore,
+        modelSupplementaryView: @escaping @MainActor () -> AnyView = { AnyView(EmptyView()) }
+    ) -> ParakeetComponent {
         let implementation = ParakeetEngineImplementation(store: store)
         return ParakeetComponent(
             engine: implementation,
-            settingsView: AnyView(ParakeetSettingsView(engine: implementation))
+            settingsView: AnyView(ParakeetSettingsView(
+                engine: implementation,
+                modelSupplementaryView: modelSupplementaryView
+            ))
         )
     }
 }
@@ -1113,7 +1119,10 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     }
 
     var settingsView: AnyView? {
-        AnyView(ParakeetSettingsView(engine: self))
+        AnyView(ParakeetSettingsView(
+            engine: self,
+            modelSupplementaryView: { AnyView(EmptyView()) }
+        ))
     }
 
     var huggingFaceToken: String? { _hfToken }
@@ -1334,6 +1343,7 @@ private enum ParakeetBundledModelError: LocalizedError {
 
 private struct ParakeetSettingsView: View {
     let engine: ParakeetEngineImplementation
+    let modelSupplementaryView: @MainActor () -> AnyView
     private let bundle = Bundle(for: ParakeetEngineImplementation.self)
     @Environment(\.dismiss) private var dismiss
     @State private var selectedVersion: ParakeetVersion = .v3
@@ -1549,6 +1559,9 @@ private struct ParakeetSettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
+
+                Divider()
+                modelSupplementaryView()
 
                 if case .ready = modelState {
                     Divider()

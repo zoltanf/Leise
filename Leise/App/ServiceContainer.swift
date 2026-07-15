@@ -37,7 +37,10 @@ final class BuiltInComponents: ObservableObject {
         defer { PerformanceMilestones.end(performanceToken) }
 
         let parakeet = ParakeetComponentFactory.make(
-            store: ComponentSettingsStore(namespace: "parakeet")
+            store: ComponentSettingsStore(namespace: "parakeet"),
+            modelSupplementaryView: {
+                AnyView(SpokenLanguageSettingsSection())
+            }
         )
         let filler = FillerWordCleanupFactory.make(
             store: ComponentSettingsStore(namespace: "filler-words")

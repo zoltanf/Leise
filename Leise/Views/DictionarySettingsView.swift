@@ -19,13 +19,16 @@ struct DictionarySettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if viewModel.entries.isEmpty && viewModel.filterTab != .termPacks {
-                emptyState
-            } else {
-                dictionaryHeader
+            dictionaryHeader
 
-                if viewModel.filterTab == .termPacks {
-                    termPacksView
+            switch viewModel.filterTab {
+            case .termPacks:
+                termPacksView
+            case .fillerWords:
+                fillerWordsView
+            case .all, .terms, .corrections:
+                if viewModel.entries.isEmpty {
+                    emptyState
                 } else {
                     dictionaryEntriesView
                 }
@@ -61,14 +64,15 @@ struct DictionarySettingsView: View {
                 Text(String(localized: "All")).tag(DictionaryViewModel.FilterTab.all)
                 Text(String(localized: "Terms")).tag(DictionaryViewModel.FilterTab.terms)
                 Text(String(localized: "Corrections")).tag(DictionaryViewModel.FilterTab.corrections)
+                Text(String(localized: "Filler Words")).tag(DictionaryViewModel.FilterTab.fillerWords)
                 Text(String(localized: "Term Packs")).tag(DictionaryViewModel.FilterTab.termPacks)
             }
             .pickerStyle(.segmented)
-            .frame(width: 380)
+            .frame(width: 460)
 
             Spacer()
 
-            if viewModel.filterTab != .termPacks {
+            if viewModel.filterTab != .termPacks && viewModel.filterTab != .fillerWords {
                 Button {
                     viewModel.startCreating(type: .correction)
                 } label: {
@@ -81,27 +85,49 @@ struct DictionarySettingsView: View {
                 }
             }
 
-            Menu {
-                Button {
-                    viewModel.exportDictionary()
-                } label: {
-                    Label(String(localized: "Export..."), systemImage: "square.and.arrow.up")
-                }
-                .disabled(viewModel.entries.isEmpty)
+            if viewModel.filterTab != .fillerWords {
+                Menu {
+                    Button {
+                        viewModel.exportDictionary()
+                    } label: {
+                        Label(String(localized: "Export..."), systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(viewModel.entries.isEmpty)
 
-                Button {
-                    viewModel.importDictionary()
+                    Button {
+                        viewModel.importDictionary()
+                    } label: {
+                        Label(String(localized: "Import..."), systemImage: "square.and.arrow.down")
+                    }
                 } label: {
-                    Label(String(localized: "Import..."), systemImage: "square.and.arrow.down")
+                    Image(systemName: "ellipsis.circle")
                 }
-            } label: {
-                Image(systemName: "ellipsis.circle")
+                .menuStyle(.borderlessButton)
+                .frame(width: 28)
             }
-            .menuStyle(.borderlessButton)
-            .frame(width: 28)
         }
         .padding(.horizontal, 4)
         .padding(.bottom, 4)
+    }
+
+    private var fillerWordsView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(String(localized: "Choose which filler words Leise removes automatically after transcription."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                ServiceContainer.shared.builtInComponents.fillerCleanupSettingsView
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.secondary.opacity(0.055))
+                    )
+            }
+            .padding(.horizontal, 2)
+            .padding(.top, 8)
+            .frame(maxWidth: 820, alignment: .topLeading)
+        }
     }
 
     private var dictionaryEntriesView: some View {

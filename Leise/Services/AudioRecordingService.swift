@@ -1316,6 +1316,10 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
             return .selectedInputDeviceIncompatible(issue)
         case .routingConflict:
             return .audioRoutingConflict
+        case .permissionDenied:
+            return .microphonePermissionDenied
+        case .previewFailed:
+            return .engineStartFailed(error.localizedDescription)
         }
     }
 

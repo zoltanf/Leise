@@ -4,21 +4,32 @@ struct ParakeetSettingsPage: View {
     var body: some View {
         BuiltInSettingsPage(
             title: String(localized: "Processing"),
-            description: String(localized: "Choose a Parakeet model and configure local transcription and vocabulary boosting."),
+            description: String(localized: "Choose a Parakeet model, set the spoken language, and configure local transcription and vocabulary boosting."),
             systemImage: "cpu",
             settingsView: ServiceContainer.shared.builtInComponents.parakeetSettingsView
         )
     }
 }
 
-struct FillerWordCleanupSettingsPage: View {
+struct SpokenLanguageSettingsSection: View {
+    @ObservedObject private var settings = ServiceContainer.shared.settingsViewModel
+
     var body: some View {
-        BuiltInSettingsPage(
-            title: String(localized: "Filler Word Cleanup"),
-            description: String(localized: "Choose which filler words Leise removes automatically after transcription."),
-            systemImage: "text.badge.minus",
-            settingsView: ServiceContainer.shared.builtInComponents.fillerCleanupSettingsView
-        )
+        VStack(alignment: .leading, spacing: 8) {
+            Text(String(localized: "Spoken Language"))
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            LanguageSelectionEditor(
+                selection: $settings.languageSelection,
+                availableLanguages: settings.availableLanguages,
+                hintBehavior: LanguageSelectionHintBehavior(engine: settings.activeTranscriptionEngine)
+            )
+
+            Text(String(localized: "Controls dictation and profiles that inherit the global spoken language. Recorder and Recovery have separate language settings."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

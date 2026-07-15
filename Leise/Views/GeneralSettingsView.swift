@@ -3,22 +3,9 @@ import ServiceManagement
 
 struct GeneralSettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @ObservedObject private var settings = ServiceContainer.shared.settingsViewModel
 
     var body: some View {
         Form {
-            Section(String(localized: "Spoken Language")) {
-                LanguageSelectionEditor(
-                    selection: $settings.languageSelection,
-                    availableLanguages: settings.availableLanguages,
-                    hintBehavior: LanguageSelectionHintBehavior(engine: settings.activeTranscriptionEngine)
-                )
-
-                Text(String(localized: "Controls dictation and profiles that inherit the global spoken language. Recorder and Recovery have separate language settings."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             Section(String(localized: "Startup")) {
                 Toggle(String(localized: "Launch at Login"), isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in
