@@ -74,6 +74,14 @@ for command in xcodebuild codesign ditto shasum plutil; do
   fi
 done
 
+remove_tree() {
+  local path="$1"
+  if [[ -e "$path" ]]; then
+    chmod -R u+w "$path" 2>/dev/null || true
+    rm -rf -- "$path"
+  fi
+}
+
 version="$(bash "$repo_root/scripts/version.sh" current)"
 build_number="$(git -C "$repo_root" rev-list --count HEAD 2>/dev/null || true)"
 if [[ -z "$build_number" || ! "$build_number" =~ ^[0-9]+$ ]]; then
@@ -85,9 +93,9 @@ if [[ -n "$(git -C "$repo_root" status --short)" ]]; then
 fi
 
 if [[ "$clean" == true ]]; then
-  rm -rf -- "$derived_data_path"
+  remove_tree "$derived_data_path"
 fi
-rm -rf -- "$artifact_dir"
+remove_tree "$artifact_dir"
 mkdir -p "$derived_data_path" "$artifact_dir"
 
 log "version: $version ($build_number)"
@@ -170,7 +178,7 @@ package_edition() {
     }
     dmg_path="$artifact_dir/$artifact_base.dmg"
     dmg_root="$derived_data_path/dmg-root-$edition"
-    rm -rf -- "$dmg_root"
+    remove_tree "$dmg_root"
     mkdir -p "$dmg_root"
     ditto "$app_path" "$dmg_root/$app_name.app"
     ln -s /Applications "$dmg_root/Applications"
@@ -191,13 +199,13 @@ fi
 
 if [[ "$variant" == "all" || "$variant" == "offline" ]]; then
   offline_app_path="$derived_data_path/Offline/$app_name.app"
-  rm -rf -- "$(dirname "$offline_app_path")"
+  remove_tree "$(dirname "$offline_app_path")"
   mkdir -p "$(dirname "$offline_app_path")"
   ditto "$built_app_path" "$offline_app_path"
 
   bash "$repo_root/scripts/prepare-offline-models.sh" "$offline_models_path"
   offline_resources="$offline_app_path/Contents/Resources/OfflineModels"
-  rm -rf -- "$offline_resources"
+  remove_tree "$offline_resources"
   ditto "$offline_models_path" "$offline_resources"
   chmod -R a-w "$offline_resources"
   package_edition "offline" "$offline_app_path"
