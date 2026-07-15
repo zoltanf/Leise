@@ -5,25 +5,56 @@ import SwiftUI
 import FluidAudio
 import LeiseCore
 
-private actor AsyncTranscriptionGate {
-    private var isLocked = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+enum TranscriptionPriority: Int, Sendable {
+    case final = 0
+    case preview = 1
+}
 
-    func withLock<T: Sendable>(_ operation: @Sendable () async throws -> T) async throws -> T {
-        await acquire()
+actor AsyncTranscriptionGate {
+    private struct Waiter {
+        let id: UUID
+        let priority: TranscriptionPriority
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
+    private var isLocked = false
+    private var waiters: [Waiter] = []
+
+    func withLock<T: Sendable>(
+        priority: TranscriptionPriority,
+        _ operation: @Sendable () async throws -> T
+    ) async throws -> T {
+        try await acquire(priority: priority)
         defer { release() }
+        try Task.checkCancellation()
         return try await operation()
     }
 
-    private func acquire() async {
+    private func acquire(priority: TranscriptionPriority) async throws {
         guard isLocked else {
+            try Task.checkCancellation()
             isLocked = true
             return
         }
 
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    waiters.append(Waiter(id: id, priority: priority, continuation: continuation))
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id: id) }
         }
+    }
+
+    private func cancelWaiter(id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        let waiter = waiters.remove(at: index)
+        waiter.continuation.resume(throwing: CancellationError())
     }
 
     private func release() {
@@ -32,8 +63,11 @@ private actor AsyncTranscriptionGate {
             return
         }
 
-        let next = waiters.removeFirst()
-        next.resume()
+        let nextIndex = waiters.indices.min { lhs, rhs in
+            waiters[lhs].priority.rawValue < waiters[rhs].priority.rawValue
+        } ?? waiters.startIndex
+        let next = waiters.remove(at: nextIndex)
+        next.continuation.resume()
     }
 }
 
@@ -76,6 +110,7 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     private static let shortClipConfidenceThreshold: Float = 0.55
     private static let shortClipConfidenceGateDuration: TimeInterval = 1.0
     private static let fluidAudioProgressMinimumSampleCount = 240_000
+    private static let modelWarmupSampleCount = 16_000
     static let ctcChunkSampleCount = ASRConstants.maxModelSamples
     static let ctcChunkOverlapSampleCount = 32_000
     static var ctcChunkStrideSampleCount: Int {
@@ -90,12 +125,16 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     fileprivate var _selectedModelId: String?
     private let stateSubject = PassthroughSubject<Void, Never>()
     var modelState: ParakeetModelState = .notLoaded { didSet { stateSubject.send() } }
+    private var modelLoadTask: Task<Void, Never>?
+    private var modelLoadGeneration = UUID()
     fileprivate var downloadProgress: Double = 0
     fileprivate var selectedVersion: ParakeetVersion = .v3
     fileprivate var _hfToken: String?
 
     // Vocabulary Boosting
     fileprivate var ctcModels: CtcModels?
+    private var ctcModelLoadTask: Task<Void, Never>?
+    private var ctcModelLoadGeneration = UUID()
     fileprivate var ctcModelDirectory: URL?
     fileprivate var ctcTokenizer: CtcTokenizer?
     fileprivate var ctcSpotter: CtcKeywordSpotter?
@@ -229,7 +268,8 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
         onProgress: @Sendable @escaping (String) -> Bool,
         onSourceProgress: @Sendable @escaping (TranscriptionSourceProgress) -> Bool
     ) async throws -> EngineTranscriptionResult {
-        try await transcriptionGate.withLock {
+        let priority: TranscriptionPriority = purpose == .final ? .final : .preview
+        return try await transcriptionGate.withLock(priority: priority) {
             try await transcribeSerially(
                 audio: audio,
                 language: language,
@@ -328,15 +368,29 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
             return EngineTranscriptionResult(text: "", detectedLanguage: nil, segments: [])
         }
 
-        let segments: [EngineTranscriptionSegment]
-        if let tokenTimings = finalResult.tokenTimings, !tokenTimings.isEmpty {
-            segments = Self.groupTokensIntoSegments(tokenTimings)
-        } else {
-            segments = []
-        }
+        let segments = Self.transcriptionSegments(
+            from: finalResult.tokenTimings,
+            purpose: purpose
+        )
 
         _ = onProgress(finalResult.text)
         return EngineTranscriptionResult(text: finalResult.text, detectedLanguage: nil, segments: segments)
+    }
+
+    static func transcriptionSegments(
+        from tokenTimings: [TokenTiming]?,
+        purpose: TranscriptionRequestPurpose
+    ) -> [EngineTranscriptionSegment] {
+        guard shouldBuildTranscriptionSegments(for: purpose),
+              let tokenTimings,
+              !tokenTimings.isEmpty else {
+            return []
+        }
+        return groupTokensIntoSegments(tokenTimings)
+    }
+
+    static func shouldBuildTranscriptionSegments(for purpose: TranscriptionRequestPurpose) -> Bool {
+        purpose == .final
     }
 
     static func sourceProgress(
@@ -450,6 +504,29 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     // MARK: - Vocabulary Boosting
 
     func downloadCtcModel() async {
+        if ctcModels != nil, ctcTokenizer != nil {
+            ctcModelState = .ready
+            return
+        }
+        if let ctcModelLoadTask {
+            await ctcModelLoadTask.value
+            return
+        }
+
+        let generation = UUID()
+        ctcModelLoadGeneration = generation
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performCtcModelLoad(generation: generation)
+        }
+        ctcModelLoadTask = task
+        await task.value
+        if ctcModelLoadGeneration == generation {
+            ctcModelLoadTask = nil
+        }
+    }
+
+    private func performCtcModelLoad(generation: UUID) async {
         ctcModelState = .downloading
         do {
             let directory: URL
@@ -465,10 +542,13 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
                 directory = CtcModels.defaultCacheDirectory(for: .ctc110m)
             }
             let tokenizer = try await CtcTokenizer.load(from: directory)
+            guard !Task.isCancelled, ctcModelLoadGeneration == generation else { return }
             ctcModels = models
             ctcModelDirectory = directory
             ctcTokenizer = tokenizer
             ctcModelState = .ready
+        } catch where Task.isCancelled || ctcModelLoadGeneration != generation {
+            return
         } catch {
             ctcModelState = .error(error.localizedDescription)
         }
@@ -846,6 +926,9 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     }
 
     private func clearVocabularyBoostingState(resetModelState: Bool = false) {
+        ctcModelLoadGeneration = UUID()
+        ctcModelLoadTask?.cancel()
+        ctcModelLoadTask = nil
         clearConfiguredVocabulary()
         ctcModels = nil
         ctcModelDirectory = nil
@@ -858,38 +941,65 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     // MARK: - Model Management
 
     func loadModel() async {
+        if let modelLoadTask {
+            await modelLoadTask.value
+            return
+        }
+
+        let generation = UUID()
+        modelLoadGeneration = generation
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performModelLoad(generation: generation)
+        }
+        modelLoadTask = task
+        await task.value
+        if modelLoadGeneration == generation {
+            modelLoadTask = nil
+        }
+    }
+
+    private func performModelLoad(generation: UUID) async {
+        let loadingVersion = selectedVersion
         modelState = .downloading
         downloadProgress = 0.1
 
         do {
             let models: AsrModels
-            if let bundledDirectory = bundledAsrModelDirectory(for: selectedVersion) {
+            if let bundledDirectory = bundledAsrModelDirectory(for: loadingVersion) {
                 disableFluidAudioNetwork(for: bundledDirectory)
-                try validateBundledAsrModel(at: bundledDirectory, version: selectedVersion)
+                try validateBundledAsrModel(at: bundledDirectory, version: loadingVersion)
                 models = try await AsrModels.load(
                     from: bundledDirectory,
-                    version: selectedVersion.asrModelVersion
+                    version: loadingVersion.asrModelVersion
                 )
             } else {
                 applyHuggingFaceTokenToEnvironment()
-                try await ensureVocabularyAsset(for: selectedVersion)
-                models = try await AsrModels.downloadAndLoad(version: selectedVersion.asrModelVersion)
+                try await ensureVocabularyAsset(for: loadingVersion)
+                models = try await AsrModels.downloadAndLoad(version: loadingVersion.asrModelVersion)
             }
+            guard !Task.isCancelled,
+                  modelLoadGeneration == generation,
+                  selectedVersion == loadingVersion else { return }
             downloadProgress = 0.7
 
             let manager = AsrManager(config: .default)
             try await manager.loadModels(models)
+            await warmUpModel(manager, version: loadingVersion)
+            guard !Task.isCancelled,
+                  modelLoadGeneration == generation,
+                  selectedVersion == loadingVersion else { return }
             downloadProgress = 1.0
 
             asrManager = manager
             loadedAsrModels = models
-            loadedModelId = selectedVersion.modelDef.id
-            _selectedModelId = selectedVersion.modelDef.id
+            loadedModelId = loadingVersion.modelDef.id
+            _selectedModelId = loadingVersion.modelDef.id
             modelState = .ready
 
-            store.setUserDefault(selectedVersion.modelDef.id, forKey: "selectedModel")
-            store.setUserDefault(selectedVersion.modelDef.id, forKey: "loadedModel")
-            store.setUserDefault(selectedVersion.rawValue, forKey: "selectedVersion")
+            store.setUserDefault(loadingVersion.modelDef.id, forKey: "selectedModel")
+            store.setUserDefault(loadingVersion.modelDef.id, forKey: "loadedModel")
+            store.setUserDefault(loadingVersion.rawValue, forKey: "selectedVersion")
 
             if vocabularyBoostingEnabled {
                 let ctcDirectory = bundledCtcModelDirectory
@@ -898,9 +1008,35 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
                     await downloadCtcModel()
                 }
             }
+        } catch where Task.isCancelled || modelLoadGeneration != generation {
+            return
         } catch {
             modelState = .error(error.localizedDescription)
             downloadProgress = 0
+        }
+    }
+
+    private func warmUpModel(_ manager: AsrManager, version: ParakeetVersion) async {
+        guard !Task.isCancelled else { return }
+
+        let startedAt = ContinuousClock.now
+        var decoderState = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
+        do {
+            _ = try await manager.transcribe(
+                Array(repeating: Float.zero, count: Self.modelWarmupSampleCount),
+                decoderState: &decoderState
+            )
+            Self.logger.info(
+                "Core ML warmup finished in \(ContinuousClock.now - startedAt), model=\(version.rawValue, privacy: .public)"
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            // Priming is an optimization. Keep the successfully loaded model available
+            // and let a real transcription surface any persistent inference failure.
+            Self.logger.warning(
+                "Core ML warmup failed for model=\(version.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
@@ -1014,6 +1150,9 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     }
 
     func unloadModel(clearPersistence: Bool = true) {
+        modelLoadGeneration = UUID()
+        modelLoadTask?.cancel()
+        modelLoadTask = nil
         clearVocabularyBoostingState(resetModelState: true)
         asrManager = nil
         loadedAsrModels = nil
@@ -1170,6 +1309,18 @@ extension ParakeetEngineImplementation {
     }
     var stateDidChange: AnyPublisher<Void, Never> {
         stateSubject.eraseToAnyPublisher()
+    }
+
+    func prepareForDictation() async {
+        guard vocabularyBoostingEnabled,
+              ctcModels == nil || ctcTokenizer == nil else {
+            return
+        }
+
+        let directory = bundledCtcModelDirectory
+            ?? CtcModels.defaultCacheDirectory(for: .ctc110m)
+        guard CtcModels.modelsExist(at: directory) else { return }
+        await downloadCtcModel()
     }
 
     func prepareModel(id: String?, allowDownloads: Bool) async throws {

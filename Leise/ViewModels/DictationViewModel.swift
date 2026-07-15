@@ -433,12 +433,14 @@ final class DictationViewModel: ObservableObject {
     private func completeDictationSession(id: UUID) {
         if activeDictationSessionID == id {
             activeDictationSessionID = nil
+            modelManager.endDictationActivity()
         }
     }
 
     private func failDictationSession(id: UUID, error _: String) {
         if activeDictationSessionID == id {
             activeDictationSessionID = nil
+            modelManager.endDictationActivity()
         }
     }
 
@@ -776,7 +778,7 @@ final class DictationViewModel: ObservableObject {
                 to: audioStartCompletedTimestamp
             )
             recentTranscriptionPaletteHandler.hide()
-            modelManager.cancelAutoUnloadTimer()
+            modelManager.beginDictationActivity()
             if selectedInputUsesBluetooth {
                 logger.info("Skipping recording start sound for Bluetooth input device")
             }
@@ -1393,6 +1395,7 @@ final class DictationViewModel: ObservableObject {
         metadataCaptureTask = nil
         lastStreamingParams = nil
         isStopInFlight = false
+        modelManager.endDictationActivity()
         activeDictationSessionID = nil
         pendingPushToTalkDiscardMessage = nil
         clearRecordingStartCueState()

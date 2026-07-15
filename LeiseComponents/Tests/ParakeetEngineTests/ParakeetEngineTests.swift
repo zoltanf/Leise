@@ -4,6 +4,35 @@ import XCTest
 
 @MainActor
 final class ParakeetEngineImplementationTests: XCTestCase {
+    private actor AsyncLatch {
+        private var isOpen = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        func wait() async {
+            guard !isOpen else { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+
+        func open() {
+            isOpen = true
+            let pending = waiters
+            waiters.removeAll()
+            pending.forEach { $0.resume() }
+        }
+    }
+
+    private actor OrderedRecorder {
+        private var entries: [String] = []
+
+        func append(_ entry: String) {
+            entries.append(entry)
+        }
+
+        func values() -> [String] {
+            entries
+        }
+    }
+
     private final class TestStore: ParakeetStore, @unchecked Sendable {
         private struct Box: @unchecked Sendable { let value: Any }
         private let lock = NSLock()
@@ -116,6 +145,83 @@ final class ParakeetEngineImplementationTests: XCTestCase {
             ParakeetEngineImplementation.vocabularyAssetURL(for: .v3).absoluteString,
             "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml/resolve/main/parakeet_vocab.json"
         )
+    }
+
+    func testTranscriptionGatePrioritizesFinalRequest() async throws {
+        let gate = AsyncTranscriptionGate()
+        let holderStarted = AsyncLatch()
+        let releaseHolder = AsyncLatch()
+        let recorder = OrderedRecorder()
+
+        let holder = Task {
+            try await gate.withLock(priority: .preview) {
+                await recorder.append("holder")
+                await holderStarted.open()
+                await releaseHolder.wait()
+            }
+        }
+        await holderStarted.wait()
+
+        let preview = Task {
+            try await gate.withLock(priority: .preview) {
+                await recorder.append("preview")
+            }
+        }
+        try await Task.sleep(for: .milliseconds(10))
+        let final = Task {
+            try await gate.withLock(priority: .final) {
+                await recorder.append("final")
+            }
+        }
+        try await Task.sleep(for: .milliseconds(10))
+
+        await releaseHolder.open()
+        try await holder.value
+        try await final.value
+        try await preview.value
+
+        let values = await recorder.values()
+        XCTAssertEqual(values, ["holder", "final", "preview"])
+    }
+
+    func testCancelledGateWaiterDoesNotRun() async throws {
+        let gate = AsyncTranscriptionGate()
+        let holderStarted = AsyncLatch()
+        let releaseHolder = AsyncLatch()
+        let recorder = OrderedRecorder()
+
+        let holder = Task {
+            try await gate.withLock(priority: .preview) {
+                await holderStarted.open()
+                await releaseHolder.wait()
+            }
+        }
+        await holderStarted.wait()
+
+        let cancelledPreview = Task {
+            try await gate.withLock(priority: .preview) {
+                await recorder.append("cancelled preview")
+            }
+        }
+        try await Task.sleep(for: .milliseconds(10))
+        cancelledPreview.cancel()
+
+        do {
+            try await cancelledPreview.value
+            XCTFail("Expected the queued preview to be cancelled")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        await releaseHolder.open()
+        try await holder.value
+        let values = await recorder.values()
+        XCTAssertEqual(values, [])
+    }
+
+    func testPreviewSkipsTimestampSegmentConstruction() {
+        XCTAssertFalse(ParakeetEngineImplementation.shouldBuildTranscriptionSegments(for: .preview))
+        XCTAssertTrue(ParakeetEngineImplementation.shouldBuildTranscriptionSegments(for: .final))
     }
 
     func testOfflineDistributionUsesBundledAssetsAndLoadingLanguage() throws {

@@ -181,6 +181,7 @@ public protocol TranscriptionEngine: AnyObject, Sendable {
 
     func selectModel(id: String)
     func prepareModel(id: String?, allowDownloads: Bool) async throws
+    func prepareForDictation() async
     func shouldPrecomputeFinalTranscription(dictionaryTermHints: [DictionaryTermHint]) -> Bool
     func precomputeFinalTranscription(_ request: TranscriptionPrecomputationRequest) async
     func discardFinalTranscriptionPrecomputation(sessionID: UUID)
@@ -189,6 +190,8 @@ public protocol TranscriptionEngine: AnyObject, Sendable {
 }
 
 public extension TranscriptionEngine {
+    func prepareForDictation() async {}
+
     func shouldPrecomputeFinalTranscription(dictionaryTermHints _: [DictionaryTermHint]) -> Bool {
         false
     }

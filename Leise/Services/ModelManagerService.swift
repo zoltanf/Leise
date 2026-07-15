@@ -33,7 +33,7 @@ struct TranscriptionAuthStatus {
 }
 
 enum ModelAutoUnloadPolicy {
-    static let defaultSeconds = 600
+    static let defaultSeconds = 0
 
     static func effectiveSeconds(defaults: UserDefaults = .standard) -> Int {
         guard defaults.object(forKey: UserDefaultsKeys.modelAutoUnloadSeconds) != nil else {
@@ -87,6 +87,7 @@ final class ModelManagerService: ObservableObject {
     private var stateCancellable: AnyCancellable?
     private var autoUnloadTask: Task<Void, Never>?
     private var autoUnloadEntry: ModelAutoUnloadDiagnosticsSnapshot.Entry?
+    private var isDictationActivityActive = false
     private var dictationPreparationTask: Task<Void, Error>?
     private var dictationPreparationKey: DictationPreparationKey?
     private var dictationPreparationOriginalModelID: String?
@@ -185,19 +186,18 @@ final class ModelManagerService: ObservableObject {
         engine.selectModel(id: modelId)
     }
 
-    /// Loads an already-downloaded model while the user is speaking. The normal
-    /// transcription path awaits this same task, avoiding duplicate model loads
-    /// when a recording is stopped quickly. A hotkey press never starts a download.
+    /// Loads an already-downloaded model and any cached engine-specific resources
+    /// while the user is speaking. The normal transcription path awaits this same
+    /// task, avoiding duplicate preparation when a recording is stopped quickly.
+    /// A hotkey press never starts a download.
     func prepareForDictation(
         engineOverrideId: String? = nil,
         modelOverrideId: String? = nil
     ) {
-        guard autoUnloadSeconds != -1 else { return }
         guard let engine = engine(for: engineOverrideId ?? selectedProviderId) else { return }
 
         let modelID = modelOverrideId ?? engine.selectedModelID
         let key = DictationPreparationKey(engineID: engine.id, modelID: modelID)
-        guard !engine.isReady || engine.selectedModelID != modelID else { return }
         guard dictationPreparationKey != key || dictationPreparationTask == nil else { return }
 
         cancelDictationPreparation()
@@ -207,7 +207,10 @@ final class ModelManagerService: ObservableObject {
         dictationPreparationOriginalModelID = engine.selectedModelID
         dictationPreparationOutcome = .inFlight
         let task = Task { @MainActor in
-            try await engine.prepareModel(id: modelID, allowDownloads: false)
+            if !engine.isReady || engine.selectedModelID != modelID {
+                try await engine.prepareModel(id: modelID, allowDownloads: false)
+            }
+            await engine.prepareForDictation()
         }
         dictationPreparationTask = task
 
@@ -220,6 +223,23 @@ final class ModelManagerService: ObservableObject {
             case .failure: .failed
             }
         }
+    }
+
+    /// Prevents an idle policy from unloading a model while recording,
+    /// transcription, or insertion for the current dictation is still active.
+    func beginDictationActivity() {
+        guard !isDictationActivityActive else { return }
+        isDictationActivityActive = true
+        cancelAutoUnloadTimer()
+    }
+
+    /// Restarts the configured idle countdown after every terminal dictation
+    /// outcome, including successful, discarded, cancelled, and failed sessions.
+    func endDictationActivity() {
+        guard isDictationActivityActive else { return }
+        isDictationActivityActive = false
+        cancelDictationPreparation()
+        scheduleAutoUnloadIfNeeded()
     }
 
     private func cancelDictationPreparation() {
@@ -503,7 +523,10 @@ final class ModelManagerService: ObservableObject {
     func scheduleAutoUnloadIfNeeded() {
         autoUnloadTask?.cancel()
         autoUnloadTask = nil
-        guard let engine, engine.isReady, autoUnloadSeconds != 0 else {
+        guard !isDictationActivityActive,
+              let engine,
+              engine.isReady,
+              autoUnloadSeconds != 0 else {
             autoUnloadEntry = nil
             return
         }

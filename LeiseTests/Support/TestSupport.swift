@@ -166,6 +166,7 @@ final class TestTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
     private(set) var requests: [TranscriptionRequest] = []
     private(set) var selectedModelHistory: [String] = []
     private(set) var prepareCallCount = 0
+    private(set) var prepareForDictationCallCount = 0
     private(set) var prepareAllowDownloadsHistory: [Bool] = []
     private(set) var unloadCallCount = 0
     private(set) var precomputationRequests: [TranscriptionPrecomputationRequest] = []
@@ -210,6 +211,10 @@ final class TestTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
         if let id { selectModel(id: id) }
         isReady = true
         stateSubject.send()
+    }
+
+    func prepareForDictation() async {
+        prepareForDictationCallCount += 1
     }
 
     func transcribe(_ request: TranscriptionRequest) async throws -> EngineTranscriptionResult {

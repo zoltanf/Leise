@@ -80,7 +80,7 @@ struct AdvancedSettingsView: View {
                 } label: {
                     SettingsInfoLabel(
                         title: String(localized: "Auto-unload model"),
-                        info: String(localized: "Automatically unloads local models from memory after inactivity. It reloads when needed. Does not affect cloud engines.")
+                        info: String(localized: "Keeps local models in memory by default for fast dictation. If auto-unload is enabled, Leise starts reloading the model when recording begins. Does not affect cloud engines.")
                     )
                 }
 

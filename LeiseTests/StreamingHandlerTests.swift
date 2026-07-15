@@ -150,6 +150,7 @@ final class StreamingHandlerTests: XCTestCase {
         XCTAssertTrue(engine.isReady)
         XCTAssertEqual(engine.prepareCallCount, 1)
         XCTAssertEqual(engine.prepareAllowDownloadsHistory, [false])
+        XCTAssertEqual(engine.prepareForDictationCallCount, 1)
 
         _ = try await modelManager.transcribe(
             audioSamples: Array(repeating: 0.1, count: 16_000),
@@ -159,6 +160,28 @@ final class StreamingHandlerTests: XCTestCase {
 
         XCTAssertEqual(engine.prepareCallCount, 1)
         XCTAssertEqual(engine.requests.count, 1)
+    }
+
+    func testReadyModelStillPreparesCachedDictationResources() async throws {
+        let engine = TestTranscriptionEngine(isReady: true)
+        let modelManager = ModelManagerService(engine: engine)
+
+        modelManager.prepareForDictation()
+        for _ in 0..<20 where engine.prepareForDictationCallCount == 0 {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(engine.prepareCallCount, 0)
+        XCTAssertEqual(engine.prepareForDictationCallCount, 1)
+
+        _ = try await modelManager.transcribe(
+            audioSamples: Array(repeating: 0.1, count: 16_000),
+            languageSelection: .auto,
+            task: .transcribe
+        )
+
+        XCTAssertEqual(engine.prepareCallCount, 0)
+        XCTAssertEqual(engine.prepareForDictationCallCount, 1)
     }
 
     func testOverrideWarmupRestoresPreviouslySelectedModelAfterTranscription() async throws {
@@ -260,5 +283,62 @@ final class StreamingHandlerTests: XCTestCase {
             modelManager: ModelManagerService(engine: engine),
             recentBufferProvider: { _ in [] }
         )
+    }
+}
+
+@MainActor
+final class ModelManagerAutoUnloadTests: XCTestCase {
+    private var originalAutoUnloadValue: Any?
+
+    override func setUp() {
+        super.setUp()
+        originalAutoUnloadValue = UserDefaults.standard.object(
+            forKey: UserDefaultsKeys.modelAutoUnloadSeconds
+        )
+    }
+
+    override func tearDown() {
+        if let originalAutoUnloadValue {
+            UserDefaults.standard.set(
+                originalAutoUnloadValue,
+                forKey: UserDefaultsKeys.modelAutoUnloadSeconds
+            )
+        } else {
+            UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.modelAutoUnloadSeconds)
+        }
+        super.tearDown()
+    }
+
+    func testAutoUnloadDefaultsToNever() throws {
+        let suiteName = "ModelManagerAutoUnloadTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertEqual(ModelAutoUnloadPolicy.effectiveSeconds(defaults: defaults), 0)
+        XCTAssertTrue(ModelAutoUnloadPolicy.shouldRestoreLoadedModelsPassively(defaults: defaults))
+    }
+
+    func testDictationPreloadsImmediatePolicyAndPreventsMidSessionUnload() async throws {
+        UserDefaults.standard.set(-1, forKey: UserDefaultsKeys.modelAutoUnloadSeconds)
+        let engine = TestTranscriptionEngine(isReady: false)
+        let manager = ModelManagerService(engine: engine)
+
+        manager.beginDictationActivity()
+        manager.prepareForDictation()
+        for _ in 0..<20 where !engine.isReady {
+            await Task.yield()
+        }
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertTrue(engine.isReady)
+        XCTAssertEqual(engine.prepareCallCount, 1)
+        XCTAssertEqual(engine.prepareAllowDownloadsHistory, [false])
+        XCTAssertEqual(engine.unloadCallCount, 0)
+
+        manager.endDictationActivity()
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(engine.unloadCallCount, 1)
+        XCTAssertFalse(engine.isReady)
     }
 }
