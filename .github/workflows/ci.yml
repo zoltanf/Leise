@@ -12,7 +12,9 @@ concurrency:
 jobs:
   test:
     name: Guards, package tests, and app tests
-    runs-on: macos-15
+    # The app target requires the Xcode 26 toolchain (Swift 6.3+); older
+    # images ship Xcode 16.x, which rejects parts of the codebase.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - name: Checkout
