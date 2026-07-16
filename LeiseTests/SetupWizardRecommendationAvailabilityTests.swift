@@ -63,6 +63,18 @@ final class SetupWizardRecommendationAvailabilityTests: XCTestCase {
         )
     }
 
+    func testBundledParakeetModelsDoNotRequireASetupDownload() {
+        XCTAssertEqual(
+            SetupWizardRecommendationAvailability.resolve(
+                manifestId: SetupWizardParakeetRecommendation.manifestId,
+                isInstalled: true,
+                isReady: false,
+                hasBundledModels: true
+            ),
+            .ready
+        )
+    }
+
     func testLoadedParakeetModelIsRecognizedAsLoaded() {
         XCTAssertTrue(
             SetupWizardParakeetModelSelection.isLoaded(

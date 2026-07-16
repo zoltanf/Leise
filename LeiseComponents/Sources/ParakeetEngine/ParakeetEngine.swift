@@ -206,6 +206,7 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
 
     var selectedModelID: String? { _selectedModelId }
     var isOfflineDistribution: Bool { store.bundledModelsDirectory != nil }
+    var usesBundledModels: Bool { isOfflineDistribution }
     var allowsTranscriptPreviewFallback: Bool { true }
     var supportsStreaming: Bool { true }
 

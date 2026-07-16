@@ -693,11 +693,17 @@ struct SetupWizardView: View {
         if isActivatingParakeet {
             if let progress = parakeetSetupActivity?.progress {
                 return localizedAppText(
-                    "Downloading Parakeet model (\(Int(progress * 100))%)",
-                    de: "Parakeet-Modell wird heruntergeladen (\(Int(progress * 100)) %)"
+                    parakeetEngine?.usesBundledModels == true
+                        ? "Loading included Parakeet model (\(Int(progress * 100))%)"
+                        : "Downloading Parakeet model (\(Int(progress * 100))%)",
+                    de: parakeetEngine?.usesBundledModels == true
+                        ? "Enthaltenes Parakeet-Modell wird geladen (\(Int(progress * 100)) %)"
+                        : "Parakeet-Modell wird heruntergeladen (\(Int(progress * 100)) %)"
                 )
             }
-            return localizedAppText("Downloading and loading the Parakeet model", de: "Parakeet-Modell wird heruntergeladen und geladen")
+            return parakeetEngine?.usesBundledModels == true
+                ? localizedAppText("Loading the included Parakeet model", de: "Enthaltenes Parakeet-Modell wird geladen")
+                : localizedAppText("Downloading and loading the Parakeet model", de: "Parakeet-Modell wird heruntergeladen und geladen")
         }
         if hasEngineReadyForSetupTest {
             if selectedTranscriptionEngineForSetup?.id == SetupWizardParakeetRecommendation.providerId {
@@ -726,7 +732,8 @@ struct SetupWizardView: View {
         let availability = SetupWizardRecommendationAvailability.resolve(
             manifestId: manifestId,
             isInstalled: isInstalled,
-            isReady: isReady
+            isReady: isReady,
+            hasBundledModels: engine?.usesBundledModels ?? false
         )
         let isInteractive = recommendationCardIsInteractive(
             manifestId: manifestId,
@@ -807,7 +814,11 @@ struct SetupWizardView: View {
         } else {
             switch availability {
             case .ready:
-                if manifestId == SetupWizardParakeetRecommendation.manifestId, isSelected {
+                if manifestId == SetupWizardParakeetRecommendation.manifestId,
+                   parakeetEngine?.usesBundledModels == true,
+                   !(parakeetEngine?.isReady ?? false) {
+                    statusPill(localizedAppText("Included", de: "Enthalten"), systemImage: "shippingbox.fill", color: .green)
+                } else if manifestId == SetupWizardParakeetRecommendation.manifestId, isSelected {
                     statusPill(localizedAppText("Selected", de: "Ausgewählt"), systemImage: "checkmark.circle.fill", color: .blue)
                 } else if manifestId == SetupWizardParakeetRecommendation.manifestId {
                     statusPill(localizedAppText("Select", de: "Auswählen"), systemImage: "circle", color: .blue)
@@ -875,6 +886,91 @@ struct SetupWizardView: View {
 
     @ViewBuilder
     private func parakeetModelSetupControls(engine: any TranscriptionEngine) -> some View {
+        if engine.usesBundledModels {
+            bundledParakeetModelSetupControls(engine: engine)
+        } else {
+            downloadableParakeetModelSetupControls(engine: engine)
+        }
+    }
+
+    @ViewBuilder
+    private func bundledParakeetModelSetupControls(engine: any TranscriptionEngine) -> some View {
+        let requestedModelId = selectedParakeetModelId
+            ?? engine.selectedModelID
+            ?? SetupWizardParakeetRecommendation.preferredModelId(from: engine.models)
+            ?? ""
+
+        VStack(alignment: .leading, spacing: 9) {
+            Text(localizedAppText("Choose your language coverage", de: "Wähle deine Sprachabdeckung"))
+                .font(.subheadline.weight(.semibold))
+            Text(localizedAppText(
+                "The models are already included. You can change this later in Processing settings.",
+                de: "Die Modelle sind bereits enthalten. Du kannst dies später in den Verarbeitungseinstellungen ändern."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                ForEach(engine.models) { model in
+                    let copy = SetupWizardParakeetRecommendation.bundledModelCopy(for: model)
+                    bundledModelChoice(
+                        engine: engine,
+                        modelId: model.id,
+                        title: copy.title,
+                        subtitle: copy.subtitle,
+                        isSelected: requestedModelId == model.id
+                    )
+                }
+            }
+        }
+    }
+
+    private func bundledModelChoice(
+        engine: any TranscriptionEngine,
+        modelId: String,
+        title: String,
+        subtitle: String,
+        isSelected: Bool
+    ) -> some View {
+        let isLoaded = SetupWizardParakeetModelSelection.isLoaded(
+            requestedModelId: modelId,
+            loadedModelId: engine.selectedModelID,
+            isConfigured: engine.isReady
+        )
+
+        return Button {
+            selectedParakeetModelId = modelId
+            Task { await activateParakeetForSetup(modelId: modelId) }
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text(title).font(.callout.weight(.semibold))
+                    Spacer(minLength: 0)
+                    if isLoaded {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    }
+                }
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(isLoaded ? localizedAppText("Ready", de: "Bereit") : localizedAppText("Included", de: "Enthalten"))
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(isLoaded ? .green : .blue)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.blue.opacity(0.18) : Color.white.opacity(0.05)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(isSelected ? Color.blue : Color.white.opacity(0.12), lineWidth: isSelected ? 1.5 : 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(isActivatingParakeet)
+    }
+
+    @ViewBuilder
+    private func downloadableParakeetModelSetupControls(engine: any TranscriptionEngine) -> some View {
         let models = engine.models
         let fallbackModelId = engine.selectedModelID
             ?? SetupWizardParakeetRecommendation.preferredModelId(from: models)
@@ -954,7 +1050,7 @@ struct SetupWizardView: View {
         }
 
         do {
-            try await engine.prepareModel(id: requestedModelId, allowDownloads: true)
+            try await engine.prepareModel(id: requestedModelId, allowDownloads: !engine.usesBundledModels)
             parakeetSetupActivity = nil
         } catch {
             parakeetSetupActivity = SetupModelActivity(
@@ -1350,6 +1446,8 @@ enum SetupWizardDefaultHotkey {
 enum SetupWizardParakeetRecommendation {
     static let providerId = "parakeet"
     static let manifestId = "com.leise.parakeet"
+    static let v2ModelId = "parakeet-tdt-0.6b-v2"
+    static let v3ModelId = "parakeet-tdt-0.6b-v3"
 
     static var description: String {
         localizedAppText(
@@ -1359,9 +1457,26 @@ enum SetupWizardParakeetRecommendation {
     }
 
     static func preferredModelId(from models: [TranscriptionModel]) -> String? {
-        models.first { $0.id == "parakeet-tdt-0.6b-v2" }?.id
+        models.first { $0.id == v2ModelId }?.id
             ?? models.first { $0.id.localizedCaseInsensitiveContains("v2") }?.id
             ?? models.first?.id
+    }
+
+    static func bundledModelCopy(for model: TranscriptionModel) -> (title: String, subtitle: String) {
+        switch model.id {
+        case v2ModelId:
+            return (
+                localizedAppText("English", de: "Englisch"),
+                localizedAppText("Best for English dictation", de: "Am besten für englisches Diktieren")
+            )
+        case v3ModelId:
+            return (
+                localizedAppText("25 languages", de: "25 Sprachen"),
+                localizedAppText("For multilingual dictation", de: "Für mehrsprachiges Diktieren")
+            )
+        default:
+            return (model.displayName, "")
+        }
     }
 }
 
@@ -1449,13 +1564,14 @@ enum SetupWizardRecommendationAvailability: Equatable {
         manifestId: String,
         isInstalled: Bool,
         isReady: Bool,
+        hasBundledModels: Bool = false,
         architecture: String = RuntimeArchitecture.current
     ) -> SetupWizardRecommendationAvailability {
         if manifestId == SetupWizardParakeetRecommendation.manifestId, architecture != "arm64" {
             return .unavailable(.appleSiliconOnly)
         }
 
-        if isReady {
+        if isReady || hasBundledModels {
             return .ready
         }
 

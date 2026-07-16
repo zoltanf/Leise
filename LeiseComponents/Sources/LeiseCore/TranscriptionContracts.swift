@@ -176,6 +176,7 @@ public protocol TranscriptionEngine: AnyObject, Sendable {
     var selectedModelID: String? { get }
     var capabilities: TranscriptionCapabilities { get }
     var isReady: Bool { get }
+    var usesBundledModels: Bool { get }
     var preparationStatus: ModelPreparationStatus { get }
     var stateDidChange: AnyPublisher<Void, Never> { get }
 
@@ -190,6 +191,8 @@ public protocol TranscriptionEngine: AnyObject, Sendable {
 }
 
 public extension TranscriptionEngine {
+    var usesBundledModels: Bool { false }
+
     func prepareForDictation() async {}
 
     func shouldPrecomputeFinalTranscription(dictionaryTermHints _: [DictionaryTermHint]) -> Bool {
