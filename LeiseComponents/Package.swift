@@ -12,7 +12,13 @@ let package = Package(
         .executable(name: "OfflineModelPrep", targets: ["OfflineModelPrep"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", branch: "main"),
+        // Pinned to an exact revision: FluidAudio is the deepest runtime dependency
+        // (ASR, CTC, rescoring), and a branch pin lets any resolve silently advance
+        // to untested upstream code. Bump deliberately and re-run the test suites.
+        .package(
+            url: "https://github.com/FluidInference/FluidAudio.git",
+            revision: "2ea0727541135c34189194084531337a3518e1bf"
+        ),
     ],
     targets: [
         .target(name: "LeiseCore"),

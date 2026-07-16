@@ -4041,10 +4041,10 @@
 			<string>https://github.com/FluidInference/FluidAudio.git</string>
 			<key>requirement</key>
 			<dict>
-				<key>branch</key>
-				<string>main</string>
 				<key>kind</key>
-				<string>branch</string>
+				<string>revision</string>
+				<key>revision</key>
+				<string>2ea0727541135c34189194084531337a3518e1bf</string>
 			</dict>
 		</dict>
 		<key>RR00000000000000000004</key>
@@ -4076,10 +4076,10 @@
 			<string>https://github.com/ejbills/mediaremote-adapter.git</string>
 			<key>requirement</key>
 			<dict>
-				<key>branch</key>
-				<string>master</string>
 				<key>kind</key>
-				<string>branch</string>
+				<string>revision</string>
+				<key>revision</key>
+				<string>b4ae765bbfa111f1e8fad240a8ea74f01e91d325</string>
 			</dict>
 		</dict>
 		<key>XX00000000000000000001</key>
