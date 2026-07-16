@@ -208,6 +208,16 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
     private var pendingAudioLevelUpdate: (level: Float, rms: Float)?
     private var isAudioLevelPublishScheduled = false
 
+    /// Testing hook: overrides the uptime clock used for audio-level publish
+    /// coalescing so tests can advance time deterministically instead of
+    /// sleeping. When set, the deferred flush timer is not scheduled; tests
+    /// flush explicitly via `testingFlushPendingAudioLevelUpdate()`.
+    var audioLevelClockOverride: (() -> UInt64)?
+
+    private func audioLevelUptimeNow() -> UInt64 {
+        audioLevelClockOverride?() ?? DispatchTime.now().uptimeNanoseconds
+    }
+
     static let targetSampleRate: Double = 16000
     private static let captureTapFrames: AVAudioFrameCount = 256
     private static let audioLevelPublishIntervalNanoseconds: UInt64 = 33_333_333
@@ -1167,7 +1177,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
     }
 
     private func publishAudioLevel(_ level: Float, rms: Float, force: Bool = false) {
-        let now = DispatchTime.now().uptimeNanoseconds
+        let now = audioLevelUptimeNow()
         var shouldPublishNow = false
         var publishDelayNanoseconds: UInt64?
 
@@ -1193,7 +1203,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
             }
         }
 
-        if let publishDelayNanoseconds {
+        if let publishDelayNanoseconds, audioLevelClockOverride == nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + .nanoseconds(Int(publishDelayNanoseconds))) { [weak self] in
                 self?.flushPendingAudioLevelUpdate()
             }
@@ -1208,7 +1218,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
         pendingAudioLevelUpdate = nil
         isAudioLevelPublishScheduled = false
         if update != nil {
-            lastAudioLevelPublishUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+            lastAudioLevelPublishUptimeNanoseconds = audioLevelUptimeNow()
         }
         audioLevelPublishLock.unlock()
 
@@ -1482,10 +1492,14 @@ extension AudioRecordingService {
 
     func testingMarkAudioLevelPublishedNow() {
         audioLevelPublishLock.lock()
-        lastAudioLevelPublishUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        lastAudioLevelPublishUptimeNanoseconds = audioLevelUptimeNow()
         pendingAudioLevelUpdate = nil
         isAudioLevelPublishScheduled = false
         audioLevelPublishLock.unlock()
+    }
+
+    func testingFlushPendingAudioLevelUpdate() {
+        flushPendingAudioLevelUpdate()
     }
 
     func testingFailActiveRecordingDueToRecovery(_ error: AudioRecordingError) {

@@ -69,6 +69,11 @@ final class AudioEngineRecoverySupportTests: XCTestCase {
     @MainActor
     func testAudioLevelPublishingCoalescesRapidBufferUpdates() async throws {
         let service = AudioRecordingService()
+        // Deterministic clock: the coalescing decision is driven by this value
+        // instead of wall-clock time, so the test cannot flake under load.
+        nonisolated(unsafe) var nowNanoseconds: UInt64 = 1_000_000_000
+        service.audioLevelClockOverride = { nowNanoseconds }
+
         let recorder = AudioLevelUpdateRecorder()
         let firstUpdate = expectation(description: "first audio level update")
 
@@ -85,13 +90,16 @@ final class AudioEngineRecoverySupportTests: XCTestCase {
         await fulfillment(of: [firstUpdate], timeout: 1.0)
 
         service.testingMarkAudioLevelPublishedNow()
+
+        // Two rapid updates inside the publish interval must coalesce.
+        nowNanoseconds += 5_000_000
         service.testingProcessConvertedSamples(Array(repeating: 0.10 as Float, count: 160))
         service.testingProcessConvertedSamples(Array(repeating: 0.20 as Float, count: 160))
-
-        try await Task.sleep(for: .milliseconds(5))
         XCTAssertEqual(recorder.count, 1)
 
-        try await Task.sleep(for: .milliseconds(45))
+        // Once the interval has elapsed, the flush publishes the latest value.
+        nowNanoseconds += 40_000_000
+        service.testingFlushPendingAudioLevelUpdate()
         XCTAssertEqual(recorder.count, 2)
         XCTAssertEqual(recorder.last ?? -1, AudioLevelMeter.normalizedLevel(rms: 0.20), accuracy: 0.0001)
 
