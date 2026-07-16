@@ -189,6 +189,8 @@ final class DictationViewModel: ObservableObject {
     }
     private var lastStreamingParams: StreamingParamsSnapshot?
     private var isStopInFlight = false
+    private var isStartInFlight = false
+    private var pendingStopRequestedDuringStart = false
     private var activeDictationSessionID: UUID?
     private var pendingPushToTalkDiscardMessage: String?
     private var recordingStartCuePending = false
@@ -708,8 +710,8 @@ final class DictationViewModel: ObservableObject {
         sessionID: UUID = UUID(),
         requestUptimeNanoseconds: UInt64 = DispatchTime.now().uptimeNanoseconds
     ) {
-        guard state == .idle else {
-            logger.warning("startRecording rejected: state=\(String(describing: self.state), privacy: .public); resetting hotkey state")
+        guard state == .idle, !isStartInFlight else {
+            logger.warning("startRecording rejected: state=\(String(describing: self.state), privacy: .public), startInFlight=\(self.isStartInFlight, privacy: .public); resetting hotkey state")
             hotkeyService.cancelDictation()
             return
         }
@@ -759,18 +761,45 @@ final class DictationViewModel: ObservableObject {
         }
 
         let resolvedInputSelection = audioDeviceService.resolvedRecordingInputSelection()
+        let initialForcedProfile = forcedProfile(for: forcedProfileId)
+        audioRecordingService.microphoneBoostEnabled = microphoneBoostEnabled
+        audioRecordingService.selectedDeviceID = resolvedInputSelection.deviceID
+        audioRecordingService.hasExplicitDeviceSelection = resolvedInputSelection.hasExplicitDeviceSelection
+        let selectedInputUsesBluetooth = resolvedInputSelection.usesBluetoothTransport
+        audioRecordingService.selectedInputDeviceUsesBluetoothTransport = selectedInputUsesBluetooth
+        prepareRecordingStartCue(playsSound: !selectedInputUsesBluetooth)
 
+        // The engine start runs off the main thread (it can block for seconds
+        // on device settling or Bluetooth route stabilization). While it is in
+        // flight, duplicate starts are ignored and a stop request is queued
+        // and honored as soon as the start completes.
+        isStartInFlight = true
+        pendingStopRequestedDuringStart = false
+        Task { [weak self] in
+            await self?.finishRecordingStart(
+                startTimestamp: startTimestamp,
+                sessionID: sessionID,
+                forcedProfileId: forcedProfileId,
+                requestUptimeNanoseconds: requestUptimeNanoseconds,
+                resolvedInputSelection: resolvedInputSelection,
+                initialForcedProfile: initialForcedProfile
+            )
+        }
+    }
+
+    private func finishRecordingStart(
+        startTimestamp: CFAbsoluteTime,
+        sessionID: UUID,
+        forcedProfileId: UUID?,
+        requestUptimeNanoseconds: UInt64,
+        resolvedInputSelection: ResolvedRecordingInputSelection,
+        initialForcedProfile: Profile?
+    ) async {
+        let selectedInputUsesBluetooth = resolvedInputSelection.usesBluetoothTransport
         do {
-            let initialForcedProfile = forcedProfile(for: forcedProfileId)
-            audioRecordingService.microphoneBoostEnabled = microphoneBoostEnabled
-            audioRecordingService.selectedDeviceID = resolvedInputSelection.deviceID
-            audioRecordingService.hasExplicitDeviceSelection = resolvedInputSelection.hasExplicitDeviceSelection
-            let selectedInputUsesBluetooth = resolvedInputSelection.usesBluetoothTransport
-            audioRecordingService.selectedInputDeviceUsesBluetoothTransport = selectedInputUsesBluetooth
-            prepareRecordingStartCue(playsSound: !selectedInputUsesBluetooth)
             let audioStartTimestamp = DispatchTime.now().uptimeNanoseconds
-            try PerformanceMilestones.measure(.audioStart) {
-                try audioRecordingService.startRecording(requestUptimeNanoseconds: requestUptimeNanoseconds)
+            try await PerformanceMilestones.measure(.audioStart) {
+                try await audioRecordingService.startRecordingDetached(requestUptimeNanoseconds: requestUptimeNanoseconds)
             }
             let audioStartCompletedTimestamp = DispatchTime.now().uptimeNanoseconds
             let audioStartMs = Self.elapsedMilliseconds(
@@ -835,7 +864,15 @@ final class DictationViewModel: ObservableObject {
             logger.info(
                 "Recording started: requestToAudioStartMs=\(Self.formatMilliseconds(requestToAudioStartMs), privacy: .public), audioStartMs=\(Self.formatMilliseconds(audioStartMs), privacy: .public), contextMs=\(String(format: "%.1f", contextMs), privacy: .public), totalStartMs=\(String(format: "%.1f", totalStartMs), privacy: .public)"
             )
+
+            isStartInFlight = false
+            if pendingStopRequestedDuringStart {
+                pendingStopRequestedDuringStart = false
+                stopDictation()
+            }
         } catch {
+            isStartInFlight = false
+            pendingStopRequestedDuringStart = false
             clearRecordingStartCueState()
             clearDeferredRecordingContext()
             restoreRecordingSideEffects()
@@ -970,6 +1007,12 @@ final class DictationViewModel: ObservableObject {
     }
 
     private func stopDictation() {
+        if isStartInFlight {
+            // The hotkey was released before the audio engine finished
+            // starting; honor the stop as soon as the start completes.
+            pendingStopRequestedDuringStart = true
+            return
+        }
         guard state == .recording, !isStopInFlight else { return }
         clearCancelWarning()
         isStopInFlight = true
@@ -1020,20 +1063,17 @@ final class DictationViewModel: ObservableObject {
         var samples = await audioRecordingService.stopRecording(policy: stopPolicy)
         guard !Task.isCancelled else { return }
         logger.info("Stop timing: stopRecording done elapsedMs=\(stopElapsedMs(), privacy: .public), previewTextLength=\(previewText.count, privacy: .public)")
-        let liveSessionResultBeforePreviewFallback = await streamingHandler.finish()
+        await streamingHandler.finish()
         guard !Task.isCancelled else {
             streamingHandler.discardFinalPrecomputation()
             return
         }
-        logger.info("Stop timing: streamingHandler.finish done elapsedMs=\(stopElapsedMs(), privacy: .public), resultTextLength=\(liveSessionResultBeforePreviewFallback?.text.count ?? -1, privacy: .public)")
-        let liveSessionResult = liveSessionResultBeforePreviewFallback.map {
-            StreamingHandler.resultPreferringStablePreviewIfNeeded($0, stablePreview: previewText)
-        }
+        logger.info("Stop timing: streamingHandler.finish done elapsedMs=\(stopElapsedMs(), privacy: .public)")
         let hasPreviewText = !previewText.isEmpty
 
         let peakLevel = audioRecordingService.peakRawAudioLevel
         let rawDuration = Double(samples.count) / AudioRecordingService.targetSampleRate
-        let hasConfirmedText = hasConfirmedTranscriptionResultText(liveSessionResult)
+        let hasConfirmedText = hasConfirmedTranscriptionText(previewText)
         let decision = classifyShortSpeech(
             rawDuration: rawDuration,
             peakLevel: peakLevel,
@@ -1084,12 +1124,9 @@ final class DictationViewModel: ObservableObject {
         let audioSamplesForHistory: [Float]? = saveAudio ? samples : nil
 
         let audioDuration = Double(samples.count) / AudioRecordingService.targetSampleRate
-        processingPhase = liveSessionResult == nil
-            ? String(localized: "Transcribing...")
-            : String(localized: "Processing...")
+        processingPhase = String(localized: "Transcribing...")
 
         guard !Task.isCancelled else { return }
-        let usedLiveSessionResult = liveSessionResult != nil
         transcriptionTask = Task {
             defer { self.streamingHandler.discardFinalPrecomputation() }
             do {
@@ -1110,33 +1147,19 @@ final class DictationViewModel: ObservableObject {
                 let termsPrompt = dictionaryService.getTermsForPrompt(providerId: dictionaryProviderId)
                 let termHints = dictionaryService.getTermHints(providerId: dictionaryProviderId)
 
-                let transcription = if let liveSessionResult {
-                    FinalTranscriptionOutput(
-                        result: liveSessionResult,
-                        modelId: modelManager.resolvedModelId(
-                            engineOverrideId: engineOverride,
-                            cloudModelOverride: cloudModelOverride
-                        ),
-                        modelDisplayName: modelManager.resolvedModelDisplayName(
-                            engineOverrideId: engineOverride,
-                            cloudModelOverride: cloudModelOverride
-                        )
-                    )
-                } else {
-                    try await transcribeFinalAudioWithPerformanceMilestone(
-                        audioSamples: samples,
-                        languageSelection: languageSelection,
-                        task: task,
-                        primaryEngineId: primaryEngineId,
-                        primaryCloudModelOverride: cloudModelOverride,
-                        prompt: termsPrompt,
-                        dictionaryTermHints: termHints,
-                        normalizeNumbers: effectiveNumberNormalizationOverride,
-                        sessionID: sessionID
-                    )
-                }
+                let transcription = try await transcribeFinalAudioWithPerformanceMilestone(
+                    audioSamples: samples,
+                    languageSelection: languageSelection,
+                    task: task,
+                    primaryEngineId: primaryEngineId,
+                    primaryCloudModelOverride: cloudModelOverride,
+                    prompt: termsPrompt,
+                    dictionaryTermHints: termHints,
+                    normalizeNumbers: effectiveNumberNormalizationOverride,
+                    sessionID: sessionID
+                )
                 let result = transcription.result
-                logger.info("Stop timing: final transcription ready elapsedMs=\(stopElapsedMs(), privacy: .public), usedLiveResult=\(usedLiveSessionResult, privacy: .public)")
+                logger.info("Stop timing: final transcription ready elapsedMs=\(stopElapsedMs(), privacy: .public)")
 
                 // Bail out if a new recording started while we were transcribing
                 guard !Task.isCancelled else { return }
@@ -1688,9 +1711,9 @@ enum ShortSpeechDecision: Equatable {
     }
 }
 
-func hasConfirmedTranscriptionResultText(_ result: TranscriptionResult?) -> Bool {
-    guard let result else { return false }
-    return !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+func hasConfirmedTranscriptionText(_ text: String?) -> Bool {
+    guard let text else { return false }
+    return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 }
 
 enum DictationInsertionTextFormatter {

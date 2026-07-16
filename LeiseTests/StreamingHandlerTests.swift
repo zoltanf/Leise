@@ -58,9 +58,8 @@ final class StreamingHandlerTests: XCTestCase {
             stateCheck: { true }
         )
 
-        let result = await handler.finish()
+        await handler.finish()
 
-        XCTAssertNil(result)
         XCTAssertEqual(states, [false, true, false])
     }
 
@@ -255,40 +254,6 @@ final class StreamingHandlerTests: XCTestCase {
         XCTAssertEqual(
             StreamingHandler.stabilizeText(confirmed: "Ich bin an Köln.", new: "Ich bin an Koeln."),
             "Ich bin an Koeln."
-        )
-    }
-
-    func testStablePreviewReplacesShortUnrelatedFinalTail() {
-        let result = TranscriptionResult(
-            text: "tail",
-            detectedLanguage: "en",
-            duration: 2,
-            processingTime: 0.1,
-            engineUsed: "parakeet",
-            segments: []
-        )
-
-        let stabilized = StreamingHandler.resultPreferringStablePreviewIfNeeded(
-            result,
-            stablePreview: "This is the meaningful preview"
-        )
-
-        XCTAssertEqual(stabilized.text, "This is the meaningful preview")
-    }
-
-    func testProviderFinalWinsWhenPreviewIsNotSubstantive() {
-        let result = TranscriptionResult(
-            text: "final result",
-            detectedLanguage: "en",
-            duration: 2,
-            processingTime: 0.1,
-            engineUsed: "parakeet",
-            segments: []
-        )
-
-        XCTAssertEqual(
-            StreamingHandler.resultPreferringStablePreviewIfNeeded(result, stablePreview: "yeah").text,
-            "final result"
         )
     }
 

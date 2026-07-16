@@ -14,6 +14,10 @@ final class StreamingHandler: @unchecked Sendable {
     private static let fallbackPreviewWindowDuration: TimeInterval = 10
     private static let firstPrecomputationDuration: TimeInterval = 15
     private static let subsequentPrecomputationStride: TimeInterval = 13
+    /// Precomputation keeps its own copy of the session audio; cap it so very
+    /// long dictations don't hold a second unbounded buffer. Beyond the cap
+    /// the final transcription simply computes the remaining chunks itself.
+    private static let maxPrecomputationDuration: TimeInterval = 10 * 60
     private static let precomputationPollInterval: Duration = .milliseconds(500)
     private static let livePreviewSampleRate: Double = 16_000
     private static let livePreviewAnalysisFrameDuration: TimeInterval = 0.1
@@ -147,8 +151,12 @@ final class StreamingHandler: @unchecked Sendable {
         }
     }
 
+    /// Cancels the preview and precompute tasks and waits for them to drain so
+    /// the final transcription never overlaps in-flight CTC inference. Any
+    /// precomputed vocabulary chunks are reused inside the engine via the
+    /// session ID; there is no transcript result to hand back from here.
     @MainActor
-    func finish() async -> TranscriptionResult? {
+    func finish() async {
         let previewTask = streamingTask
         let finalPrecomputationTask = precomputationTask
         previewTask?.cancel()
@@ -158,7 +166,6 @@ final class StreamingHandler: @unchecked Sendable {
         await previewTask?.value
         await finalPrecomputationTask?.value
         clearStreamingState(notifyStreamingStopped: true)
-        return nil
     }
 
     @MainActor
@@ -226,6 +233,11 @@ final class StreamingHandler: @unchecked Sendable {
                 availableDuration = bufferDurationProvider()
                 buffer = availableDuration >= nextRequiredDuration ? fullBufferProvider() : []
             } else {
+                break
+            }
+
+            if availableDuration > Self.maxPrecomputationDuration {
+                logger.info("Stopping final-transcription precomputation: session exceeded \(Int(Self.maxPrecomputationDuration))s")
                 break
             }
 
@@ -397,42 +409,6 @@ final class StreamingHandler: @unchecked Sendable {
         }
 
         return appendPreviewText(confirmed, new)
-    }
-
-    nonisolated static func resultPreferringStablePreviewIfNeeded(
-        _ result: TranscriptionResult,
-        stablePreview: String
-    ) -> TranscriptionResult {
-        let preview = stablePreview.trimmingCharacters(in: .whitespacesAndNewlines)
-        let final = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard shouldPreferStablePreview(final: final, preview: preview) else {
-            return result
-        }
-
-        logger.info("Using stable live preview because final live transcript looked like a short unrelated tail")
-        return TranscriptionResult(
-            text: preview,
-            detectedLanguage: nil,
-            duration: result.duration,
-            processingTime: result.processingTime,
-            engineUsed: result.engineUsed,
-            segments: result.segments
-        )
-    }
-
-    private nonisolated static func shouldPreferStablePreview(final: String, preview: String) -> Bool {
-        guard !final.isEmpty, !preview.isEmpty, final != preview else { return false }
-        guard !preview.contains(final), !final.contains(preview) else { return false }
-
-        let finalLength = transcriptContentLength(final)
-        let previewLength = transcriptContentLength(preview)
-        let previewWordCount = transcriptWords(in: preview).count
-
-        guard previewLength >= 12 || previewWordCount >= 2 else { return false }
-
-        let finalLooksTiny = finalLength <= 8
-        let previewIsMuchLonger = previewLength >= max(12, finalLength * 4)
-        return finalLooksTiny && previewIsMuchLonger
     }
 
     private nonisolated static func looksLikeProviderCorrection(confirmed: String, new: String) -> Bool {
@@ -628,12 +604,6 @@ final class StreamingHandler: @unchecked Sendable {
         guard shorterCount >= 4, longerCount - shorterCount <= 2 else { return false }
 
         return lhs.hasPrefix(rhs) || rhs.hasPrefix(lhs)
-    }
-
-    private nonisolated static func transcriptContentLength(_ text: String) -> Int {
-        text.unicodeScalars.filter { scalar in
-            !CharacterSet.whitespacesAndNewlines.contains(scalar)
-        }.count
     }
 
     private nonisolated static func compactNormalizedTranscript(_ text: String) -> String {

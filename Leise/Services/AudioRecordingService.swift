@@ -219,6 +219,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
     }
 
     static let targetSampleRate: Double = 16000
+    private let engineStartQueue = DispatchQueue(label: "com.leise.audio-engine-start", qos: .userInteractive)
     private static let captureTapFrames: AVAudioFrameCount = 256
     private static let audioLevelPublishIntervalNanoseconds: UInt64 = 33_333_333
     private static let engineTeardownRetentionInterval: TimeInterval = 0.3
@@ -337,6 +338,28 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
             return mono
         }
         return inputFormat
+    }
+
+    /// Runs the blocking start sequence on a dedicated queue so hotkey-triggered
+    /// starts never stall the main thread on input-format settling, retry
+    /// backoff, or Bluetooth route-stabilization waits (each up to seconds).
+    func startRecordingDetached(
+        requestUptimeNanoseconds: UInt64 = DispatchTime.now().uptimeNanoseconds
+    ) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            engineStartQueue.async { [weak self] in
+                guard let self else {
+                    continuation.resume(throwing: AudioRecordingError.engineStartFailed("Recording service deallocated"))
+                    return
+                }
+                do {
+                    try self.startRecording(requestUptimeNanoseconds: requestUptimeNanoseconds)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 
     func startRecording(requestUptimeNanoseconds: UInt64 = DispatchTime.now().uptimeNanoseconds) throws {

@@ -114,32 +114,11 @@ final class DictationShortSpeechTests: XCTestCase {
         XCTAssertEqual(classifyShortSpeech(rawDuration: 1.2, peakLevel: 0.0059, hasConfirmedText: true), .transcribe)
     }
 
-    func testConfirmedTranscriptionResultText_requiresNonEmptyResult() {
-        XCTAssertFalse(hasConfirmedTranscriptionResultText(nil))
-        XCTAssertFalse(hasConfirmedTranscriptionResultText(TranscriptionResult(
-            text: "",
-            detectedLanguage: nil,
-            duration: 1.2,
-            processingTime: 0.1,
-            engineUsed: "whisper",
-            segments: []
-        )))
-        XCTAssertFalse(hasConfirmedTranscriptionResultText(TranscriptionResult(
-            text: "   ",
-            detectedLanguage: nil,
-            duration: 1.2,
-            processingTime: 0.1,
-            engineUsed: "whisper",
-            segments: []
-        )))
-        XCTAssertTrue(hasConfirmedTranscriptionResultText(TranscriptionResult(
-            text: "hello",
-            detectedLanguage: "en",
-            duration: 1.2,
-            processingTime: 0.1,
-            engineUsed: "whisper",
-            segments: []
-        )))
+    func testConfirmedTranscriptionText_requiresNonEmptyText() {
+        XCTAssertFalse(hasConfirmedTranscriptionText(nil))
+        XCTAssertFalse(hasConfirmedTranscriptionText(""))
+        XCTAssertFalse(hasConfirmedTranscriptionText("   "))
+        XCTAssertTrue(hasConfirmedTranscriptionText("hello"))
     }
 
     func testFinalizeShortSpeechPolicy_waitsOnlyWhenBufferedDurationIsBelowFiveHundredths() {

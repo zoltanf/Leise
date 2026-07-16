@@ -333,6 +333,10 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
         Self.logger.info(
             "Base TDT transcription finished in \(ContinuousClock.now - baseTranscriptionStart), purpose=\(String(describing: purpose), privacy: .public), audioSeconds=\(String(format: "%.1f", audio.duration), privacy: .public)"
         )
+        // A cancelled request's result is discarded by the caller; skip the
+        // rescoring pass so the transcription gate is released promptly and
+        // the next dictation can start.
+        try Task.checkCancellation()
         let finalResult = if purpose == .final {
             await applyVocabularyRescoringIfNeeded(
                 to: result,
@@ -827,6 +831,7 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
                 let inferenceVocabulary = Self.inferenceOnlyVocabulary(from: vocab)
 
                 for range in ranges {
+                    guard !Task.isCancelled else { return result }
                     if let cached = cachedSession.chunksByStartSample[range.lowerBound],
                        cached.endSample == range.upperBound {
                         chunks.append(cached)
@@ -856,6 +861,7 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
                 )
                 reusedChunkCount = reuseCount
             } else {
+                guard !Task.isCancelled else { return result }
                 spotResult = try await spotter.spotKeywordsWithLogProbs(
                     audioSamples: audioSamples,
                     customVocabulary: vocab,

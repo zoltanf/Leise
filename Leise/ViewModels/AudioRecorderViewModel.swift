@@ -39,7 +39,6 @@ final class AudioRecorderViewModel: ObservableObject {
         let modelOverrideId: String?
         let prompt: String?
         let dictionaryTermHints: [DictionaryTermHint]
-        let liveSessionResult: TranscriptionResult?
     }
 
     struct RecordingTranscriptionFailure: Codable, Equatable, Sendable {
@@ -468,7 +467,7 @@ final class AudioRecorderViewModel: ObservableObject {
         guard state == .recording else { return }
         state = .finalizing
         Task {
-            let liveSessionResult = await streamingHandler.finish()
+            await streamingHandler.finish()
             let url = await recorderService.stopRecording()
 
             if url == nil {
@@ -489,8 +488,7 @@ final class AudioRecorderViewModel: ObservableObject {
                     providerId: providerId,
                     modelOverrideId: selectedModel,
                     prompt: dictionaryPrompt,
-                    dictionaryTermHints: dictionaryTermHints,
-                    liveSessionResult: liveSessionResult
+                    dictionaryTermHints: dictionaryTermHints
                 )
             } else {
                 finalTranscriptionRequest = nil
@@ -665,30 +663,20 @@ final class AudioRecorderViewModel: ObservableObject {
             // Use streaming result as final if buffer too short
             if !partialText.isEmpty {
                 return saveTranscriptOutcome(partialText, for: request.outputURL, request: request)
-            } else if let liveSessionResult = request.liveSessionResult {
-                let text = liveSessionResult.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty {
-                    partialText = text
-                    return saveTranscriptOutcome(text, for: request.outputURL, request: request)
-                }
             }
             return .skipped
         }
 
         do {
-            let result = if let liveSessionResult = request.liveSessionResult {
-                liveSessionResult
-            } else {
-                try await modelManager.transcribe(
-                    audioSamples: buffer,
-                    languageSelection: request.languageSelection,
-                    task: .transcribe,
-                    engineOverrideId: request.providerId,
-                    cloudModelOverride: request.modelOverrideId,
-                    prompt: request.prompt,
-                    dictionaryTermHints: request.dictionaryTermHints
-                )
-            }
+            let result = try await modelManager.transcribe(
+                audioSamples: buffer,
+                languageSelection: request.languageSelection,
+                task: .transcribe,
+                engineOverrideId: request.providerId,
+                cloudModelOverride: request.modelOverrideId,
+                prompt: request.prompt,
+                dictionaryTermHints: request.dictionaryTermHints
+            )
             let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
                 partialText = text
