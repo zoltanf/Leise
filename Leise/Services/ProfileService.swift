@@ -265,6 +265,10 @@ final class ProfileService: ObservableObject {
         do {
             try modelContext?.save()
         } catch {
+            // Roll back so the uncommitted change is not flushed later by an
+            // unrelated successful save; fetchProfiles() (run by every caller)
+            // re-syncs the published list with what is actually persisted.
+            modelContext?.rollback()
             logger.error("Save failed: \(error.localizedDescription)")
         }
     }

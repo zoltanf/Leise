@@ -59,7 +59,7 @@ enum DictionaryExporter {
         panel.canCreateDirectories = true
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? content.write(to: url, atomically: true, encoding: .utf8)
+        writeExportContent(content, to: url)
     }
 
     // MARK: - Import

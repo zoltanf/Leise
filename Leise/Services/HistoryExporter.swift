@@ -1,5 +1,24 @@
 import AppKit
+import os.log
 import UniformTypeIdentifiers
+
+private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Leise", category: "HistoryExporter")
+
+/// Writes export content and surfaces a failure to the user instead of
+/// silently producing no file (e.g. read-only location, full disk).
+@MainActor
+func writeExportContent(_ content: String, to url: URL) {
+    do {
+        try content.write(to: url, atomically: true, encoding: .utf8)
+    } catch {
+        logger.error("Export write failed: \(error.localizedDescription)")
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Export failed")
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+}
 
 enum HistoryExportFormat: String, CaseIterable {
     case markdown
@@ -138,6 +157,7 @@ enum HistoryExporter {
 
         guard let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]),
               let json = String(data: data, encoding: .utf8) else {
+            logger.error("Failed to serialize history record \(record.id, privacy: .public) for JSON export; exporting empty object")
             return "{}"
         }
         return json
@@ -163,7 +183,7 @@ enum HistoryExporter {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        try? content.write(to: url, atomically: true, encoding: .utf8)
+        writeExportContent(content, to: url)
     }
 
     // MARK: - Multi-Record Export
@@ -196,7 +216,7 @@ enum HistoryExporter {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        try? content.write(to: url, atomically: true, encoding: .utf8)
+        writeExportContent(content, to: url)
     }
 
     // MARK: - Helpers

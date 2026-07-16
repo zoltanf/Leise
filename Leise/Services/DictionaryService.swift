@@ -51,16 +51,37 @@ final class DictionaryService: ObservableObject {
         setupModelContainer(appSupportDirectory: appSupportDirectory)
     }
 
+    /// False when the persistent store could not be opened; mutations are
+    /// disabled and the UI can surface the failure instead of silently
+    /// dropping user edits.
+    @Published private(set) var isStoreAvailable = true
+
     private func setupModelContainer(appSupportDirectory: URL) {
-        guard let (container, context) = try? SwiftDataStoreFactory.create(
-            for: [DictionaryEntry.self],
-            storeName: "dictionary",
-            in: appSupportDirectory
-        ) else { return }
+        do {
+            let (container, context) = try SwiftDataStoreFactory.create(
+                for: [DictionaryEntry.self],
+                storeName: "dictionary",
+                in: appSupportDirectory
+            )
+            modelContainer = container
+            modelContext = context
+            loadEntries()
+        } catch {
+            logger.error("Failed to initialize dictionary store: \(error.localizedDescription)")
+            isStoreAvailable = false
+        }
+    }
 
-        modelContainer = container
-        modelContext = context
-
+    /// Saves the context, rolling back on failure so uncommitted changes are
+    /// never flushed later by an unrelated successful save, then reloads the
+    /// published state so the UI reflects what is actually persisted.
+    private func saveOrRollback(_ context: ModelContext, action: String) {
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            logger.error("Failed to \(action): \(error.localizedDescription)")
+        }
         loadEntries()
     }
 
@@ -174,12 +195,7 @@ final class DictionaryService: ObservableObject {
 
         context.insert(entry)
 
-        do {
-            try context.save()
-            loadEntries()
-        } catch {
-            logger.error("Failed to save entry: \(error.localizedDescription)")
-        }
+        saveOrRollback(context, action: "save entry")
     }
 
     func updateEntry(
@@ -197,12 +213,7 @@ final class DictionaryService: ObservableObject {
         entry.ctcMinSimilarity = Self.normalizedCtcMinSimilarity(entry.type == .term ? ctcMinSimilarity : nil)
         entry.updatedAt = Date()
 
-        do {
-            try context.save()
-            loadEntries()
-        } catch {
-            logger.error("Failed to update entry: \(error.localizedDescription)")
-        }
+        saveOrRollback(context, action: "update entry")
     }
 
     func deleteEntry(_ entry: DictionaryEntry) {
@@ -210,12 +221,7 @@ final class DictionaryService: ObservableObject {
 
         context.delete(entry)
 
-        do {
-            try context.save()
-            loadEntries()
-        } catch {
-            logger.error("Failed to delete entry: \(error.localizedDescription)")
-        }
+        saveOrRollback(context, action: "delete entry")
     }
 
     func toggleEntry(_ entry: DictionaryEntry) {
@@ -224,31 +230,17 @@ final class DictionaryService: ObservableObject {
         entry.isEnabled.toggle()
         entry.updatedAt = Date()
 
-        do {
-            try context.save()
-            loadEntries()
-        } catch {
-            logger.error("Failed to toggle entry: \(error.localizedDescription)")
-        }
+        saveOrRollback(context, action: "toggle entry")
     }
 
     func setEntryEnabled(_ entry: DictionaryEntry, enabled: Bool) {
         guard let context = modelContext else { return }
         guard entry.isEnabled != enabled else { return }
 
-        let previousEnabled = entry.isEnabled
-        let previousUpdatedAt = entry.updatedAt
         entry.isEnabled = enabled
         entry.updatedAt = Date()
 
-        do {
-            try context.save()
-            loadEntries()
-        } catch {
-            entry.isEnabled = previousEnabled
-            entry.updatedAt = previousUpdatedAt
-            logger.error("Failed to set entry enabled state: \(error.localizedDescription)")
-        }
+        saveOrRollback(context, action: "set entry enabled state")
     }
 
     /// Batch add multiple entries with a single save+reload
@@ -293,12 +285,7 @@ final class DictionaryService: ObservableObject {
             existingOriginals.insert(key)
         }
 
-        do {
-            try context.save()
-            loadEntries()
-        } catch {
-            logger.error("Failed to batch save entries: \(error.localizedDescription)")
-        }
+        saveOrRollback(context, action: "batch save entries")
     }
 
     /// Import entries preserving all fields including isEnabled state
@@ -344,12 +331,7 @@ final class DictionaryService: ObservableObject {
             existingOriginals.insert(key)
         }
 
-        do {
-            try context.save()
-            loadEntries()
-        } catch {
-            logger.error("Failed to import entries: \(error.localizedDescription)")
-        }
+        saveOrRollback(context, action: "import entries")
     }
 
     /// Batch delete multiple entries
@@ -360,12 +342,7 @@ final class DictionaryService: ObservableObject {
             context.delete(entry)
         }
 
-        do {
-            try context.save()
-            loadEntries()
-        } catch {
-            logger.error("Failed to batch delete entries: \(error.localizedDescription)")
-        }
+        saveOrRollback(context, action: "batch delete entries")
     }
 
     /// Get all enabled terms as a comma-separated string for Whisper prompt.
@@ -431,6 +408,8 @@ final class DictionaryService: ObservableObject {
                 try context.save()
                 loadEntries()
             } catch {
+                context.rollback()
+                loadEntries()
                 logger.error("Failed to set terms: \(error.localizedDescription)")
                 throw DictionaryServiceMutationError.saveFailed(error)
             }
@@ -489,6 +468,8 @@ final class DictionaryService: ObservableObject {
                 try context.save()
                 loadEntries()
             } catch {
+                context.rollback()
+                loadEntries()
                 logger.error("Failed to set term entries: \(error.localizedDescription)")
                 throw DictionaryServiceMutationError.saveFailed(error)
             }
@@ -519,6 +500,8 @@ final class DictionaryService: ObservableObject {
             loadEntries()
             return true
         } catch {
+            context.rollback()
+            loadEntries()
             logger.error("Failed to delete term: \(error.localizedDescription)")
             throw DictionaryServiceMutationError.saveFailed(error)
         }
@@ -786,6 +769,8 @@ final class DictionaryService: ObservableObject {
             loadEntries()
             return learned
         } catch {
+            context.rollback()
+            loadEntries()
             logger.error("Failed to learn corrections: \(error.localizedDescription)")
             return []
         }
@@ -811,12 +796,7 @@ final class DictionaryService: ObservableObject {
             context.delete(entry)
         }
 
-        do {
-            try context.save()
-            loadEntries()
-        } catch {
-            logger.error("Failed to undo learned corrections: \(error.localizedDescription)")
-        }
+        saveOrRollback(context, action: "undo learned corrections")
     }
 
     func upsertAPICorrection(original: String, replacement: String, caseSensitive: Bool) throws {
@@ -853,6 +833,8 @@ final class DictionaryService: ObservableObject {
             try context.save()
             loadEntries()
         } catch {
+            context.rollback()
+            loadEntries()
             logger.error("Failed to upsert correction: \(error.localizedDescription)")
             throw DictionaryServiceMutationError.saveFailed(error)
         }
@@ -877,6 +859,8 @@ final class DictionaryService: ObservableObject {
             loadEntries()
             return true
         } catch {
+            context.rollback()
+            loadEntries()
             logger.error("Failed to delete correction: \(error.localizedDescription)")
             throw DictionaryServiceMutationError.saveFailed(error)
         }
