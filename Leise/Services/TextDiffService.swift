@@ -22,36 +22,40 @@ final class TextDiffService {
         if origWords.isEmpty { return procWords.map { .added($0) } }
         if procWords.isEmpty { return origWords.map { .removed($0) } }
 
-        let m = origWords.count, n = procWords.count
-
-        // LCS dynamic programming
-        var dp = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
-        for i in 1...m {
-            for j in 1...n {
-                if origWords[i - 1] == procWords[j - 1] {
-                    dp[i][j] = dp[i - 1][j - 1] + 1
-                } else {
-                    dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
-                }
+        // CollectionDifference avoids the dense O(m×n) LCS matrix, which for a
+        // long dictation (thousands of words per side) allocated hundreds of
+        // megabytes and stalled the calling thread.
+        let difference = procWords.difference(from: origWords)
+        var removedOffsets = Set<Int>()
+        var insertedByOffset: [Int: String] = [:]
+        for change in difference {
+            switch change {
+            case .remove(let offset, _, _):
+                removedOffsets.insert(offset)
+            case .insert(let offset, let element, _):
+                insertedByOffset[offset] = element
             }
         }
 
-        // Backtrack to produce segments
         var segments: [DiffSegment] = []
-        var i = m, j = n
-        while i > 0 || j > 0 {
-            if i > 0 && j > 0 && origWords[i - 1] == procWords[j - 1] {
-                segments.append(.unchanged(origWords[i - 1]))
-                i -= 1; j -= 1
-            } else if j > 0 && (i == 0 || dp[i][j - 1] >= dp[i - 1][j]) {
-                segments.append(.added(procWords[j - 1]))
-                j -= 1
+        segments.reserveCapacity(max(origWords.count, procWords.count))
+        var i = 0
+        var j = 0
+        while i < origWords.count || j < procWords.count {
+            if i < origWords.count, removedOffsets.contains(i) {
+                segments.append(.removed(origWords[i]))
+                i += 1
+            } else if let inserted = insertedByOffset[j] {
+                segments.append(.added(inserted))
+                j += 1
+            } else if i < origWords.count, j < procWords.count {
+                segments.append(.unchanged(origWords[i]))
+                i += 1
+                j += 1
             } else {
-                segments.append(.removed(origWords[i - 1]))
-                i -= 1
+                break
             }
         }
-        segments.reverse()
         return segments
     }
 

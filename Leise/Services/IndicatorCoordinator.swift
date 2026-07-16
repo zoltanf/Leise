@@ -196,15 +196,64 @@ final class IndicatorCoordinator {
             }
             .store(in: &cancellables)
 
-        if globalMouseMonitor == nil {
-            globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
-                matching: [.leftMouseDown, .rightMouseDown]
-            ) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.scheduleActiveScreenRefreshes()
-                }
+        // A global mouse monitor imposes a per-click cost system-wide, so it
+        // is only installed while an indicator panel is actually on screen.
+        // These are the same signals that drive the panels' visibility.
+        let vm = ServiceContainer.shared.dictationViewModel
+        let recorder = ServiceContainer.shared.audioRecorderViewModel
+        Publishers.MergeMany(
+            vm.$state.map { _ in () }.eraseToAnyPublisher(),
+            recorder.$state.map { _ in () }.eraseToAnyPublisher(),
+            vm.$notchIndicatorVisibility.map { _ in () }.eraseToAnyPublisher(),
+            vm.$indicatorStyle.map { _ in () }.eraseToAnyPublisher()
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] in
+            // The panels update their visibility on these same events; defer
+            // one runloop turn so the monitor decision sees the settled state.
+            DispatchQueue.main.async {
+                self?.syncGlobalMouseMonitor()
             }
         }
+        .store(in: &cancellables)
+    }
+
+    func stopObserving() {
+        guard isObserving else { return }
+        isObserving = false
+        cancellables.removeAll()
+        deferredRefreshTask?.cancel()
+        deferredRefreshTask = nil
+        removeGlobalMouseMonitor()
+    }
+
+    private var anyIndicatorPanelVisible: Bool {
+        notchPanel.isVisible || overlayPanel.isVisible || minimalPanel.isVisible
+    }
+
+    private func syncGlobalMouseMonitor() {
+        if anyIndicatorPanelVisible {
+            installGlobalMouseMonitorIfNeeded()
+        } else {
+            removeGlobalMouseMonitor()
+        }
+    }
+
+    private func installGlobalMouseMonitorIfNeeded() {
+        guard globalMouseMonitor == nil else { return }
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.scheduleActiveScreenRefreshes()
+            }
+        }
+    }
+
+    private func removeGlobalMouseMonitor() {
+        guard let globalMouseMonitor else { return }
+        NSEvent.removeMonitor(globalMouseMonitor)
+        self.globalMouseMonitor = nil
     }
 
     private func refreshVisibleIndicatorPanels() {
