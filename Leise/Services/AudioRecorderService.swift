@@ -397,6 +397,7 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
         case engineStartFailed(String)
         case screenCaptureNotAvailable
         case outputDirectoryFailed
+        case finalizationFailed(String)
 
         var errorDescription: String? {
             switch self {
@@ -410,6 +411,8 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
                 "Screen recording permission is required for system audio capture."
             case .outputDirectoryFailed:
                 "Could not create recordings directory."
+            case .finalizationFailed(let detail):
+                "Failed to save the recording: \(detail)"
             }
         }
     }
@@ -1208,7 +1211,7 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
             sampleRate: targetSampleRate,
             channels: targetChannels,
             interleaved: false
-        ) else { return }
+        ) else { throw RecorderError.finalizationFailed("Cannot create mix format") }
 
         // Determine total length in frames at target sample rate
         let micDuration = Double(micFile.length) / micFile.processingFormat.sampleRate
@@ -1216,7 +1219,9 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
         let totalDuration = max(micDuration, sysDuration)
         let totalFrames = AVAudioFrameCount(totalDuration * targetSampleRate)
 
-        guard totalFrames > 0 else { return }
+        guard totalFrames > 0 else {
+            throw RecorderError.finalizationFailed("Recording contains no audio")
+        }
 
         // Read and convert both sources
         let micBuffer = try readAndConvert(file: micFile, to: mixFormat, totalFrames: totalFrames)
@@ -1242,14 +1247,18 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
         }
 
         // Mix buffers
-        guard let mixedBuffer = AVAudioPCMBuffer(pcmFormat: mixFormat, frameCapacity: totalFrames) else { return }
+        guard let mixedBuffer = AVAudioPCMBuffer(pcmFormat: mixFormat, frameCapacity: totalFrames) else {
+            throw RecorderError.finalizationFailed("Cannot allocate mix buffer")
+        }
         mixedBuffer.frameLength = totalFrames
 
         if trackMode == .separate {
             guard let leftData = mixedBuffer.floatChannelData?[0],
                   let rightData = mixedBuffer.floatChannelData?[1],
                   let micLeft = micBuffer.floatChannelData?[0],
-                  let systemLeft = sysBuffer.floatChannelData?[0] else { return }
+                  let systemLeft = sysBuffer.floatChannelData?[0] else {
+                throw RecorderError.finalizationFailed("Missing channel data for separate tracks")
+            }
 
             let micRight = micBuffer.format.channelCount > 1 ? micBuffer.floatChannelData?[1] : nil
             let systemRight = sysBuffer.format.channelCount > 1 ? sysBuffer.floatChannelData?[1] : nil
@@ -1477,7 +1486,9 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
             let sourceFormat = sourceFile.processingFormat
             let sourceFrames = AVAudioFrameCount(sourceFile.length)
 
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: sourceFrames) else { return }
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: sourceFrames) else {
+                throw RecorderError.finalizationFailed("Cannot allocate conversion buffer")
+            }
             try sourceFile.read(into: buffer)
 
             let outputSettings: [String: Any] = [

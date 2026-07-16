@@ -301,6 +301,10 @@ final class TextInsertionService {
         guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success else {
             return nil
         }
+        guard let focusedElement,
+              CFGetTypeID(focusedElement) == AXUIElementGetTypeID() else {
+            return nil
+        }
 
         let element = focusedElement as! AXUIElement
         var roleValue: AnyObject?
@@ -338,6 +342,16 @@ final class TextInsertionService {
         }
         guard let currentValue = currentState.value else {
             return false
+        }
+        // Replacing a selection with identical text leaves the value unchanged, so
+        // compare against the expected post-insertion value before requiring a change.
+        if let initialValue = initialState.value,
+           let selectedRange = initialState.selectedRange,
+           let replacementRange = Range(selectedRange, in: initialValue) {
+            let expectedValue = initialValue.replacingCharacters(in: replacementRange, with: text)
+            if currentValue == expectedValue {
+                return true
+            }
         }
         return initialState.value != currentValue
     }
@@ -460,27 +474,36 @@ final class TextInsertionService {
         logPasteVerification(verification, bundleId: bundleId)
 
         if preserveClipboard {
-            let restoreDelay: Duration
-            if isTerminalApp {
-                restoreDelay = terminalPasteFallbackRestoreDelay
-            } else if verification == .verified {
-                restoreDelay = verifiedRestoreGraceDelay
-            } else if requiresPasteboardInsertion {
-                restoreDelay = richTextPasteFallbackRestoreDelay
-            } else {
-                restoreDelay = defaultPasteFallbackRestoreDelay
-            }
-
-            if verification != .verified {
+            if verification == .unverified(.focusedTextUnchanged) {
+                // The focused text field observably did not change, so the paste failed.
+                // Keep the dictated text on the clipboard instead of restoring, so the
+                // user can paste it manually — otherwise the text would be lost entirely.
                 logger.warning(
-                    "insertText delaying clipboard restore after unverified paste: bundle=\(bundleId ?? "nil", privacy: .public), delay=\(String(describing: restoreDelay), privacy: .public)"
+                    "insertText skipping clipboard restore after failed paste; keeping dictated text on clipboard: bundle=\(bundleId ?? "nil", privacy: .public)"
+                )
+            } else {
+                let restoreDelay: Duration
+                if isTerminalApp {
+                    restoreDelay = terminalPasteFallbackRestoreDelay
+                } else if verification == .verified {
+                    restoreDelay = verifiedRestoreGraceDelay
+                } else if requiresPasteboardInsertion {
+                    restoreDelay = richTextPasteFallbackRestoreDelay
+                } else {
+                    restoreDelay = defaultPasteFallbackRestoreDelay
+                }
+
+                if verification != .verified {
+                    logger.warning(
+                        "insertText delaying clipboard restore after unverified paste: bundle=\(bundleId ?? "nil", privacy: .public), delay=\(String(describing: restoreDelay), privacy: .public)"
+                    )
+                }
+                try? await Task.sleep(for: restoreDelay)
+                restoreClipboard(savedItems, to: pasteboard)
+                logger.info(
+                    "insertText restored clipboard: bundle=\(bundleId ?? "nil", privacy: .public), changeCountAfterRestore=\(pasteboard.changeCount, privacy: .public)"
                 )
             }
-            try? await Task.sleep(for: restoreDelay)
-            restoreClipboard(savedItems, to: pasteboard)
-            logger.info(
-                "insertText restored clipboard: bundle=\(bundleId ?? "nil", privacy: .public), changeCountAfterRestore=\(pasteboard.changeCount, privacy: .public)"
-            )
         }
 
         if hadFocusedTextField {
@@ -526,7 +549,8 @@ final class TextInsertionService {
 
         var focusedElement: AnyObject?
         let result = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
-        guard result == .success, let element = focusedElement else {
+        guard result == .success, let element = focusedElement,
+              CFGetTypeID(element) == AXUIElementGetTypeID() else {
             return nil
         }
 
@@ -551,7 +575,8 @@ final class TextInsertionService {
         let systemWide = AXUIElementCreateSystemWide()
         var focusedElement: AnyObject?
         let result = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
-        guard result == .success, let element = focusedElement else { return false }
+        guard result == .success, let element = focusedElement,
+              CFGetTypeID(element) == AXUIElementGetTypeID() else { return false }
 
         let axElement = element as! AXUIElement
         var roleValue: AnyObject?
@@ -573,7 +598,8 @@ final class TextInsertionService {
         let boundsResult = AXUIElementCopyParameterizedAttributeValue(
             element, kAXBoundsForRangeParameterizedAttribute as CFString, rangeValue, &bounds
         )
-        guard boundsResult == .success, let boundsValue = bounds else { return nil }
+        guard boundsResult == .success, let boundsValue = bounds,
+              CFGetTypeID(boundsValue) == AXValueGetTypeID() else { return nil }
 
         var rect = CGRect.zero
         guard AXValueGetValue(boundsValue as! AXValue, .cgRect, &rect) else { return nil }

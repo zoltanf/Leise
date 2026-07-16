@@ -83,7 +83,9 @@ private enum ClipboardOutputFormat {
     init?(_ rawValue: String?) {
         guard let rawValue else { return nil }
         switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "rtf", "richtext", "rich text":
+        // "html" is delivered as rich text: there is no HTML pasteboard
+        // representation, and plain insertion would paste literal markup.
+        case "rtf", "richtext", "rich text", "html":
             self = .richText
         default:
             return nil

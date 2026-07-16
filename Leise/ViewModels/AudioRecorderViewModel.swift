@@ -463,9 +463,17 @@ final class AudioRecorderViewModel: ObservableObject {
     }
 
     private func stopRecordingInternal() {
+        // Enter .finalizing before the first await so a second toggle cannot
+        // trigger a concurrent stop (canToggleRecording rejects .finalizing).
+        guard state == .recording else { return }
+        state = .finalizing
         Task {
             let liveSessionResult = await streamingHandler.finish()
             let url = await recorderService.stopRecording()
+
+            if url == nil {
+                errorMessage = String(localized: "The recording could not be saved.")
+            }
 
             let finalTranscriptionRequest: FinalTranscriptionRequest?
             if transcriptionEnabled, let url {
@@ -484,7 +492,6 @@ final class AudioRecorderViewModel: ObservableObject {
                     dictionaryTermHints: dictionaryTermHints,
                     liveSessionResult: liveSessionResult
                 )
-                state = .finalizing
             } else {
                 finalTranscriptionRequest = nil
                 state = .idle

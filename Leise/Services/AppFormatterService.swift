@@ -34,10 +34,11 @@ enum AppOutputFormatResolver {
         "com.bear.Bear": "markdown",
         "com.ulyssesapp.mac": "markdown",
 
-        // HTML apps and web app bundles
-        "com.apple.mail": "html",
-        "com.microsoft.Outlook": "html",
-        "com.google.Chrome.app.mail": "html",
+        // Mail apps paste rich text; the clipboard layer has no HTML
+        // representation, so "html" would insert literal markup.
+        "com.apple.mail": "rtf",
+        "com.microsoft.Outlook": "rtf",
+        "com.google.Chrome.app.mail": "rtf",
 
         // Code editors and terminals
         "com.apple.dt.Xcode": "code",
@@ -96,7 +97,7 @@ enum AppOutputFormatResolver {
         case "docs.google.com":
             return "rtf"
         case "mail.google.com":
-            return "html"
+            return "rtf"
         default:
             return plainTextFormat
         }
@@ -140,9 +141,9 @@ final class AppFormatterService {
         switch resolvedFormat {
         case "markdown":
             return formatAsMarkdown(text)
-        case "html":
-            return formatAsHTML(text)
-        case "code", "plaintext", "plain text", "rtf", "richtext", "rich text":
+        // "html" passes through unchanged: it is handled as rich text at the
+        // clipboard layer, and inline markup would otherwise paste literally.
+        case "code", "plaintext", "plain text", "rtf", "richtext", "rich text", "html":
             return text
         default:
             return text
@@ -169,46 +170,6 @@ final class AppFormatterService {
         return result.joined(separator: "\n")
     }
 
-    private func formatAsHTML(_ text: String) -> String {
-        let lines = text.components(separatedBy: "\n")
-        var result: [String] = []
-        var inList = false
-
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            if trimmed.isEmpty {
-                if inList {
-                    result.append("</ul>")
-                    inList = false
-                }
-                continue
-            }
-
-            if let bulletContent = extractBulletContent(trimmed) {
-                if !inList {
-                    result.append("<ul>")
-                    inList = true
-                }
-                let escaped = escapeHTML(bulletContent)
-                result.append("<li>\(escaped)</li>")
-            } else {
-                if inList {
-                    result.append("</ul>")
-                    inList = false
-                }
-                let escaped = escapeHTML(trimmed)
-                result.append("<p>\(escaped)</p>")
-            }
-        }
-
-        if inList {
-            result.append("</ul>")
-        }
-
-        return result.joined(separator: "\n")
-    }
-
     /// Detects bullet-like patterns and returns the content without the bullet marker.
     /// Matches: "- text", "* text", "bullet text" (dictated "bullet" prefix)
     private func extractBulletContent(_ line: String) -> String? {
@@ -223,12 +184,5 @@ final class AppFormatterService {
             return String(line.dropFirst(7))
         }
         return nil
-    }
-
-    private func escapeHTML(_ text: String) -> String {
-        text.replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
     }
 }

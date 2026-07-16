@@ -56,7 +56,7 @@ final class AppFormatterServiceTests: XCTestCase {
     }
 
     @MainActor
-    func testHTMLFormattingEscapesMarkup() {
+    func testMailAutoFormattingLeavesTextForRichTextClipboardConversion() {
         let service = AppFormatterService()
 
         let output = service.format(
@@ -65,7 +65,7 @@ final class AppFormatterServiceTests: XCTestCase {
             outputFormat: "auto"
         )
 
-        XCTAssertEqual(output, "<p>hello &lt;team&gt;</p>\n<ul>\n<li>launch</li>\n</ul>")
+        XCTAssertEqual(output, "hello <team>\n- launch")
     }
 
     @MainActor
@@ -79,7 +79,7 @@ final class AppFormatterServiceTests: XCTestCase {
             outputFormat: "auto"
         )
 
-        XCTAssertEqual(output, "<p>hello &lt;team&gt;</p>\n<ul>\n<li>launch</li>\n</ul>")
+        XCTAssertEqual(output, "hello <team>\n- launch")
     }
 
     @MainActor

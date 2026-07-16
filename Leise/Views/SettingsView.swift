@@ -13,6 +13,7 @@ enum SettingsSidebarLayout {
         .general,
         .parakeet,
         .hotkeys,
+        .profiles,
         .appearance,
         .advanced,
         .errorLog,
@@ -331,11 +332,19 @@ private struct SettingsSidebarBadge: View {
 }
 
 struct RecordingSettingsView: View {
+    /// When true, the view renders only its sections so it can live inside a
+    /// parent Form (it must still be installed as a real child view so its
+    /// @State keeps its identity).
+    var embeddedInParentForm = false
     @ObservedObject private var dictation = ServiceContainer.shared.dictationViewModel
     @ObservedObject private var audioDevice = ServiceContainer.shared.audioDeviceService
     @State private var customSounds: [String] = SoundChoice.installedCustomSounds()
     @State private var draggedInputDevicePriorityItem: AudioInputDevicePriorityItem?
     private let soundService = ServiceContainer.shared.soundService
+
+    init(embeddedInParentForm: Bool = false) {
+        self.embeddedInParentForm = embeddedInParentForm
+    }
 
     private var needsPermissions: Bool {
         dictation.needsMicPermission || dictation.needsAccessibilityPermission
@@ -528,19 +537,20 @@ struct RecordingSettingsView: View {
     }
 
     var body: some View {
-        Form {
+        if embeddedInParentForm {
             settingsSections
-        }
-        .formStyle(.grouped)
-        .padding()
-        .frame(minWidth: 500, minHeight: 300)
-        .onAppear {
-            customSounds = SoundChoice.installedCustomSounds()
+        } else {
+            Form {
+                settingsSections
+            }
+            .formStyle(.grouped)
+            .padding()
+            .frame(minWidth: 500, minHeight: 300)
         }
     }
 
     @ViewBuilder
-    var settingsSections: some View {
+    private var settingsSections: some View {
             if needsPermissions {
                 PermissionsBanner(dictation: dictation)
             }
@@ -648,6 +658,9 @@ struct RecordingSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+            }
+            .onAppear {
+                customSounds = SoundChoice.installedCustomSounds()
             }
 
             Section(String(localized: "Clipboard")) {

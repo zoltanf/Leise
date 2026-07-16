@@ -1214,6 +1214,8 @@ final class DictationViewModel: ObservableObject {
                     )
                 }
                 logger.info("Stop timing: text inserted elapsedMs=\(stopElapsedMs(), privacy: .public)")
+                let insertionFailed = insertionResult
+                    == .pasted(verification: .unverified(.focusedTextUnchanged))
                 if case .pasted(.unverified(let reason)) = insertionResult {
                     logger.info(
                         "Text insertion paste could not be verified; continuing with clipboard paste fallback. reason=\(reason.rawValue, privacy: .public), app=\(activeApp.bundleId ?? "nil", privacy: .public)"
@@ -1241,8 +1243,20 @@ final class DictationViewModel: ObservableObject {
                     PerformanceMilestones.end(persistenceToken)
                 }
 
-                audioRecordingService.discardActiveRecoveryRecording()
-                soundService.play(.transcriptionSuccess, enabled: soundFeedbackEnabled)
+                if insertionFailed {
+                    // The paste observably did not reach the focused text field. The text
+                    // stays on the clipboard and the audio is kept for recovery.
+                    audioRecordingService.preserveActiveRecoveryRecording()
+                    soundService.play(.error, enabled: soundFeedbackEnabled)
+                    showNotchFeedback(
+                        message: String(localized: "Couldn't insert text — kept on clipboard"),
+                        icon: "doc.on.clipboard",
+                        duration: 3.0
+                    )
+                } else {
+                    audioRecordingService.discardActiveRecoveryRecording()
+                    soundService.play(.transcriptionSuccess, enabled: soundFeedbackEnabled)
+                }
                 let wordCount = text.split(separator: " ").count
                 let detectedLang = result.detectedLanguage ?? language
                 let statisticsToken = PerformanceMilestones.begin(.persistence)

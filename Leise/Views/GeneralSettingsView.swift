@@ -16,7 +16,7 @@ struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            RecordingSettingsView().settingsSections
+            RecordingSettingsView(embeddedInParentForm: true)
 
         }
         .formStyle(.grouped)

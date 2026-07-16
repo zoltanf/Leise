@@ -40,8 +40,8 @@ struct RuleMatchResult {
 final class ProfileService: ObservableObject {
     @Published var profiles: [Profile] = []
 
-    private let modelContainer: ModelContainer
-    private let modelContext: ModelContext
+    private let modelContainer: ModelContainer?
+    private let modelContext: ModelContext?
 
     init(appSupportDirectory: URL = AppConstants.appSupportDirectory) {
 
@@ -54,7 +54,11 @@ final class ProfileService: ObservableObject {
             modelContainer = container
             modelContext = context
         } catch {
-            fatalError("Failed to initialize profiles store: \(error)")
+            // A corrupt or unopenable store must not make the app unlaunchable;
+            // profiles are simply unavailable until the store can be recreated.
+            logger.error("Failed to initialize profiles store: \(error.localizedDescription)")
+            modelContainer = nil
+            modelContext = nil
         }
 
         fetchProfiles()
@@ -86,7 +90,7 @@ final class ProfileService: ObservableObject {
             hotkeyData: hotkeyData,
             autoEnterEnabled: autoEnterEnabled
         )
-        modelContext.insert(profile)
+        modelContext?.insert(profile)
         save()
         fetchProfiles()
     }
@@ -102,12 +106,15 @@ final class ProfileService: ObservableObject {
     }
 
     func deleteProfile(_ profile: Profile) {
-        modelContext.delete(profile)
+        modelContext?.delete(profile)
         save()
         fetchProfiles()
     }
 
     func replaceAll(with snapshots: [BackupProfile]) throws {
+        guard let modelContext else {
+            throw CocoaError(.persistentStoreOpen)
+        }
         do {
             for profile in try modelContext.fetch(FetchDescriptor<Profile>()) {
                 modelContext.delete(profile)
@@ -239,19 +246,24 @@ final class ProfileService: ObservableObject {
     }
 
     private func fetchProfiles() {
+        guard let modelContext else {
+            profiles = []
+            return
+        }
         let descriptor = FetchDescriptor<Profile>(
             sortBy: [SortDescriptor(\.priority, order: .reverse), SortDescriptor(\.name)]
         )
         do {
             profiles = try modelContext.fetch(descriptor)
         } catch {
+            logger.error("Fetch failed: \(error.localizedDescription)")
             profiles = []
         }
     }
 
     private func save() {
         do {
-            try modelContext.save()
+            try modelContext?.save()
         } catch {
             logger.error("Save failed: \(error.localizedDescription)")
         }
