@@ -3,15 +3,30 @@ import LeiseCore
 @testable import Leise
 
 final class DictionaryServiceTests: XCTestCase {
+    // Save and restore the developer's real values so running the suite
+    // locally does not wipe term-pack activation or industry-preset settings.
+    private var originalActivatedTermPackStates: Any?
+    private var originalSelectedIndustryPreset: Any?
+
     override func setUp() {
         super.setUp()
+        originalActivatedTermPackStates = UserDefaults.standard.object(forKey: UserDefaultsKeys.activatedTermPackStates)
+        originalSelectedIndustryPreset = UserDefaults.standard.object(forKey: UserDefaultsKeys.selectedIndustryPreset)
         UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.activatedTermPackStates)
         UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.selectedIndustryPreset)
     }
 
     override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.activatedTermPackStates)
-        UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.selectedIndustryPreset)
+        if let originalActivatedTermPackStates {
+            UserDefaults.standard.set(originalActivatedTermPackStates, forKey: UserDefaultsKeys.activatedTermPackStates)
+        } else {
+            UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.activatedTermPackStates)
+        }
+        if let originalSelectedIndustryPreset {
+            UserDefaults.standard.set(originalSelectedIndustryPreset, forKey: UserDefaultsKeys.selectedIndustryPreset)
+        } else {
+            UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.selectedIndustryPreset)
+        }
         super.tearDown()
     }
 
@@ -848,6 +863,86 @@ final class UserDataBackupServiceTests: XCTestCase {
 }
 
 final class TermPackRegistryServiceTests: XCTestCase {
+    private static let registryPayload = """
+    {
+      "schemaVersion": 1,
+      "packs": [
+        {
+          "id": "community-rust",
+          "name": "Rust Terms",
+          "description": "Rust ecosystem terms",
+          "icon": "shippingbox",
+          "version": "1.0.0",
+          "author": "Tests",
+          "terms": ["Tokio"]
+        }
+      ]
+    }
+    """.data(using: .utf8)!
+
+    @MainActor
+    func testDefaultRegistryLoadsBundledSnapshotWithoutNetwork() async {
+        let suiteName = "TermPackRegistryServiceTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let service = TermPackRegistryService(
+            userDefaults: defaults,
+            fetchData: { _ in
+                XCTFail("The bundled registry must not trigger a network fetch")
+                throw URLError(.badURL)
+            },
+            bundledRegistryData: { Self.registryPayload }
+        )
+
+        let loaded = await service.fetchRegistry()
+
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(service.fetchState, .loaded)
+        XCTAssertEqual(service.communityPacks.map(\.id), ["community-rust"])
+    }
+
+    @MainActor
+    func testBundledSnapshotAssetDecodesWithCurrentSchema() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Leise/Resources/Assets.xcassets/TermPackRegistry.dataset/termpacks.json")
+        let data = try Data(contentsOf: url)
+
+        let response = try JSONDecoder().decode(TermPackRegistryResponse.self, from: data)
+
+        XCTAssertEqual(response.schemaVersion, 1)
+        XCTAssertFalse(response.packs.isEmpty)
+    }
+
+    @MainActor
+    func testRemoteFetchRejectsNonSuccessStatus() async {
+        let suiteName = "TermPackRegistryServiceTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let service = TermPackRegistryService(
+            registryURL: URL(string: "https://example.com/termpacks.json")!,
+            userDefaults: defaults,
+            fetchData: { request in
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 404,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                return (Self.registryPayload, response)
+            }
+        )
+
+        let loaded = await service.fetchRegistry(force: true)
+
+        XCTAssertFalse(loaded)
+        XCTAssertEqual(service.fetchState, .error("Registry request failed with status 404"))
+        XCTAssertTrue(service.communityPacks.isEmpty)
+    }
+
     @MainActor
     func testBackgroundCheckDoesNotRecordTimestampWhenFetchFails() async {
         let suiteName = "TermPackRegistryServiceTests-\(UUID().uuidString)"
@@ -855,6 +950,7 @@ final class TermPackRegistryServiceTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let service = TermPackRegistryService(
+            registryURL: URL(string: "https://example.com/termpacks.json")!,
             userDefaults: defaults,
             fetchData: { _ in throw URLError(.notConnectedToInternet) }
         )
@@ -895,6 +991,7 @@ final class TermPackRegistryServiceTests: XCTestCase {
         """.data(using: .utf8)!
 
         let service = TermPackRegistryService(
+            registryURL: URL(string: "https://example.com/termpacks.json")!,
             userDefaults: defaults,
             fetchData: { _ in
                 let response = HTTPURLResponse(

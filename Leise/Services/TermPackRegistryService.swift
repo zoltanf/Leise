@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import os.log
 
@@ -46,10 +47,17 @@ final class TermPackRegistryService: ObservableObject {
     @Published var fetchState: FetchState = .idle
 
     private var lastFetchDate: Date?
-    private let registryURL: URL
+    private let registryURL: URL?
     private let cacheDuration: TimeInterval
     private let userDefaults: UserDefaults
     private let fetchData: (URLRequest) async throws -> (Data, URLResponse)
+    private let bundledRegistryData: () -> Data?
+
+    /// Remote responses larger than this are rejected before decoding.
+    static let maxRegistryResponseBytes = 5_000_000
+
+    /// Name of the vendored registry snapshot in the asset catalog.
+    static let bundledRegistryAssetName = "TermPackRegistry"
 
     enum FetchState: Equatable {
         case idle
@@ -58,18 +66,35 @@ final class TermPackRegistryService: ObservableObject {
         case error(String)
     }
 
+    /// By default the app uses the vendored registry snapshot bundled with the
+    /// app: the fork must not depend on upstream-controlled infrastructure at
+    /// runtime. A remote registry is only consulted when the user explicitly
+    /// configures one via the `termPackRegistryURL` default.
     init(
-        registryURL: URL = URL(string: "https://typewhisper.github.io/typewhisper-termpacks/termpacks.json")!,
+        registryURL: URL? = nil,
         cacheDuration: TimeInterval = 300,
         userDefaults: UserDefaults = .standard,
         fetchData: @escaping (URLRequest) async throws -> (Data, URLResponse) = { request in
             try await URLSession.shared.data(for: request)
+        },
+        bundledRegistryData: @escaping () -> Data? = {
+            NSDataAsset(name: TermPackRegistryService.bundledRegistryAssetName)?.data
         }
     ) {
-        self.registryURL = registryURL
+        self.registryURL = registryURL ?? Self.configuredRegistryURL(from: userDefaults)
         self.cacheDuration = cacheDuration
         self.userDefaults = userDefaults
         self.fetchData = fetchData
+        self.bundledRegistryData = bundledRegistryData
+    }
+
+    static func configuredRegistryURL(from userDefaults: UserDefaults) -> URL? {
+        guard let raw = userDefaults.string(forKey: UserDefaultsKeys.termPackRegistryURL)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty else {
+            return nil
+        }
+        return URL(string: raw)
     }
 
     // MARK: - Fetch Registry
@@ -85,10 +110,46 @@ final class TermPackRegistryService: ObservableObject {
 
         fetchState = .loading
 
+        guard let registryURL else {
+            return loadBundledRegistry()
+        }
+
         do {
             var request = URLRequest(url: registryURL)
             request.cachePolicy = .reloadIgnoringLocalCacheData
-            let (data, _) = try await fetchData(request)
+            let (data, response) = try await fetchData(request)
+
+            if let httpResponse = response as? HTTPURLResponse,
+               !(200...299).contains(httpResponse.statusCode) {
+                fetchState = .error("Registry request failed with status \(httpResponse.statusCode)")
+                logger.error("Registry request failed: status=\(httpResponse.statusCode)")
+                return false
+            }
+            guard data.count <= Self.maxRegistryResponseBytes else {
+                fetchState = .error("Registry response too large")
+                logger.error("Registry response too large: \(data.count) bytes")
+                return false
+            }
+
+            return applyRegistryData(data)
+        } catch {
+            fetchState = .error(error.localizedDescription)
+            logger.error("Failed to fetch term pack registry: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func loadBundledRegistry() -> Bool {
+        guard let data = bundledRegistryData() else {
+            fetchState = .error("Bundled term pack registry unavailable")
+            logger.error("Bundled term pack registry asset missing")
+            return false
+        }
+        return applyRegistryData(data)
+    }
+
+    private func applyRegistryData(_ data: Data) -> Bool {
+        do {
             let response = try JSONDecoder().decode(TermPackRegistryResponse.self, from: data)
 
             guard response.schemaVersion == 1 else {
@@ -122,11 +183,11 @@ final class TermPackRegistryService: ObservableObject {
             communityPacks = validPacks.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             lastFetchDate = Date()
             fetchState = .loaded
-            logger.info("Fetched \(self.communityPacks.count) community term pack(s)")
+            logger.info("Loaded \(self.communityPacks.count) community term pack(s)")
             return true
         } catch {
             fetchState = .error(error.localizedDescription)
-            logger.error("Failed to fetch term pack registry: \(error.localizedDescription)")
+            logger.error("Failed to decode term pack registry: \(error.localizedDescription)")
             return false
         }
     }
@@ -134,6 +195,10 @@ final class TermPackRegistryService: ObservableObject {
     // MARK: - Background Update Check
 
     func checkForUpdatesInBackground() {
+        // The bundled snapshot only changes with app updates; there is nothing
+        // to poll unless a remote registry override is configured.
+        guard registryURL != nil else { return }
+
         let lastCheck = userDefaults.double(forKey: UserDefaultsKeys.termPackRegistryLastUpdateCheck)
         let hoursSinceLastCheck = (Date().timeIntervalSince1970 - lastCheck) / 3600
         guard hoursSinceLastCheck >= 24 || lastCheck == 0 else { return }

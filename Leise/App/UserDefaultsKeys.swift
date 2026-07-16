@@ -57,6 +57,8 @@ enum UserDefaultsKeys {
     // MARK: - Dictionary
     static let activatedTermPackStates = "activatedTermPackStates"
     static let termPackRegistryLastUpdateCheck = "termPackRegistryLastUpdateCheck"
+    /// Optional user-configured remote registry; when unset, the bundled snapshot is used.
+    static let termPackRegistryURL = "termPackRegistryURL"
     static let selectedIndustryPreset = "selectedIndustryPreset"
 
     // MARK: - History
