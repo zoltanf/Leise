@@ -34,7 +34,7 @@ final class SetupWizardRecommendationAvailabilityTests: XCTestCase {
     }
 
 
-    func testParakeetRecommendationPrefersV3Model() {
+    func testParakeetRecommendationPrefersV2Model() {
         let modelId = SetupWizardParakeetRecommendation.preferredModelId(
             from: [
                 TranscriptionModel(id: "parakeet-tdt-0.6b-v2", displayName: "Parakeet TDT v2"),
@@ -42,7 +42,7 @@ final class SetupWizardRecommendationAvailabilityTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(modelId, "parakeet-tdt-0.6b-v3")
+        XCTAssertEqual(modelId, "parakeet-tdt-0.6b-v2")
     }
 
     func testEngineIsNotReadyUntilSelectedModelIsLoaded() {

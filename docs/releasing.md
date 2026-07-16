@@ -60,8 +60,9 @@ By default the command builds both release editions and writes these files to `d
 
 The standard edition keeps the existing on-demand model downloads. The offline edition
 includes Parakeet TDT v2, Parakeet TDT v3, and Parakeet CTC 110M for vocabulary boosting.
-The first offline build downloads about 1 GB into `.build/OfflineModels`; later builds reuse
-that ignored cache. Model files are deliberately not committed to Git.
+The first offline build restores the pinned model archive from GitHub Releases into
+`.build/OfflineModels`; later builds reuse that ignored cache. Model files are deliberately not
+committed to Git and normal application releases do not contact Hugging Face.
 
 The script builds with code coverage and the debug dylib disabled, applies a local ad-hoc
 signature after each edition's resources are final, restores Leise's entitlements, verifies
@@ -74,6 +75,24 @@ Offline model preparation can also be run separately:
 ```sh
 ./scripts/prepare-offline-models.sh
 ```
+
+## Offline model bundle
+
+The model archive is a separately versioned GitHub Release asset declared in
+`release/offline-models/manifest.json`. Its SHA-256 is verified before extraction, and the
+offline build then validates all three Core ML models with networking disabled.
+
+When deliberately upgrading the bundled models, increment `bundle.version` in the manifest and
+publish a new pinned archive:
+
+```sh
+./scripts/publish-offline-model-bundle.sh
+git add release/offline-models/manifest.json
+git commit -m "Pin offline model bundle vN"
+```
+
+This is the only workflow that permits a cache refresh from the model providers. Use
+`--dry-run` to build and checksum the prospective archive without publishing it.
 
 The included FluidInference Core ML conversions and their underlying NVIDIA Parakeet models
 are distributed under CC BY 4.0. Attribution and source links are embedded at
@@ -111,9 +130,21 @@ Then test, build, tag, push, and publish:
 
 The publisher requires a clean working tree and valid `gh` authentication. It creates the
 annotated `vX.Y.Z` tag only after the tests and both editions' artifact verification succeed,
-then uploads both ZIPs, both DMGs, and their shared checksum file. Use `--draft` to create a
-draft release. `--skip-tests` and `--skip-build` are available for recovery from a partially
-completed publication, but should not be used for a normal release.
+then uploads both ZIPs, both DMGs, and their shared checksum file. Once GitHub reports the
+release's asset digest, it updates `zoltanf/homebrew-leise` with the matching **offline** DMG
+version and SHA-256. Use `--draft` to create a draft release. `--skip-tests` and `--skip-build`
+are available for recovery from a partially completed publication, but should not be used for a
+normal release.
+
+To retry only the deterministic Homebrew update after a successful release:
+
+```sh
+./scripts/publish-homebrew-cask.sh --version X.Y.Z
+```
+
+The script reads the SHA-256 digest from GitHub Release metadata, refuses an asset that is not
+the offline DMG, changes only the cask version and checksum, and pushes the resulting tap commit.
+Use `--dry-run` to verify a published release without changing the tap.
 
 ## Gatekeeper and signing limitations
 

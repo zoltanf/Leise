@@ -218,7 +218,7 @@ enum PerformanceBaselineRunner {
 
     static func prepareDefaultsIfRequested() {
         guard environment["LEISE_PERFORMANCE_FIXTURE"] != nil else { return }
-        let modelID = environment["LEISE_PERFORMANCE_MODEL"] ?? "parakeet-tdt-0.6b-v3"
+        let modelID = environment["LEISE_PERFORMANCE_MODEL"] ?? "parakeet-tdt-0.6b-v2"
         let version = modelID.hasSuffix("-v2") ? "v2" : "v3"
         let defaults = UserDefaults.standard
         defaults.set("parakeet", forKey: UserDefaultsKeys.selectedEngine)
@@ -237,7 +237,7 @@ enum PerformanceBaselineRunner {
 
         let scenario = environment["LEISE_PERFORMANCE_SCENARIO"] ?? "fixture"
         let instance = max(1, Int(environment["LEISE_PERFORMANCE_INSTANCE"] ?? "1") ?? 1)
-        let modelID = environment["LEISE_PERFORMANCE_MODEL"] ?? "parakeet-tdt-0.6b-v3"
+        let modelID = environment["LEISE_PERFORMANCE_MODEL"] ?? "parakeet-tdt-0.6b-v2"
         let runs = max(1, Int(environment["LEISE_PERFORMANCE_RUNS"] ?? "1") ?? 1)
         let settleSeconds = max(
             0,

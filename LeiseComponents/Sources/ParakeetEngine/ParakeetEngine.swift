@@ -128,7 +128,7 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
     private var modelLoadTask: Task<Void, Never>?
     private var modelLoadGeneration = UUID()
     fileprivate var downloadProgress: Double = 0
-    fileprivate var selectedVersion: ParakeetVersion = .v3
+    fileprivate var selectedVersion: ParakeetVersion = .v2
     fileprivate var _hfToken: String?
 
     // Vocabulary Boosting
@@ -192,13 +192,6 @@ final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendab
 
     var isConfigured: Bool {
         asrManager != nil && loadedModelId != nil
-    }
-
-    var canDismissSettingsAfterSetup: Bool {
-        if case .ready = modelState {
-            return true
-        }
-        return false
     }
 
     var models: [TranscriptionModel] {
@@ -1416,9 +1409,34 @@ enum ParakeetVersion: String, CaseIterable {
     func settingsDescription(bundle: Bundle) -> String {
         switch self {
         case .v2:
-            return String(localized: "Best for English-only dictation. V2 generally has higher English recall. Choose V3 if you dictate in another language.", bundle: bundle)
+            return String(localized: "English only. Usually the best choice for English dictation, with higher English recall than v3.", bundle: bundle)
         case .v3:
-            return String(localized: "Recommended for most users. V3 supports 25 European languages, including English and German. Choose V2 only for English-only dictation.", bundle: bundle)
+            return String(localized: "Supports 25 European languages, including English, German, French, Spanish, and Italian. Choose v3 for non-English dictation.", bundle: bundle)
+        }
+    }
+
+    func settingsTitle(bundle: Bundle) -> String {
+        switch self {
+        case .v2:
+            return String(localized: "Best for English", bundle: bundle)
+        case .v3:
+            return String(localized: "Multilingual", bundle: bundle)
+        }
+    }
+
+    func settingsBadge(bundle: Bundle) -> String {
+        switch self {
+        case .v2:
+            return String(localized: "Default", bundle: bundle)
+        case .v3:
+            return String(localized: "25 languages", bundle: bundle)
+        }
+    }
+
+    var settingsSymbolName: String {
+        switch self {
+        case .v2: return "textformat.abc"
+        case .v3: return "globe.europe.africa.fill"
         }
     }
 
@@ -1496,248 +1514,36 @@ private struct ParakeetSettingsView: View {
     let engine: ParakeetEngineImplementation
     let modelSupplementaryView: @MainActor () -> AnyView
     private let bundle = Bundle(for: ParakeetEngineImplementation.self)
-    @Environment(\.dismiss) private var dismiss
-    @State private var selectedVersion: ParakeetVersion = .v3
+    @State private var selectedVersion: ParakeetVersion = .v2
     @State private var modelState: ParakeetModelState = .notLoaded
     @State private var downloadProgress: Double = 0
     @State private var isPolling = false
-    @State private var hfTokenInput = ""
-    @State private var showHfToken = false
-    @State private var isValidatingToken = false
-    @State private var tokenValidationResult: Bool?
     @State private var boostingEnabled: Bool = false
     @State private var ctcModelState: CtcModelState = .notDownloaded
     @State private var boostingTermCount: Int = 0
 
     private let pollTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
-    private var trimmedHfTokenInput: String {
-        hfTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var storedHfToken: String {
-        engine._hfToken?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
-
-    private var hasStoredHfToken: Bool {
-        !storedHfToken.isEmpty
-    }
-
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Parakeet")
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: 18) {
+            Text(
+                engine.isOfflineDistribution
+                    ? String(localized: "Offline edition: both transcription models and the vocabulary model are included. No model downloads or API key are required.", bundle: bundle)
+                    : String(localized: "Both models run privately on your Mac with similar speed, download size, and memory use. No account or API key is required.", bundle: bundle)
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
 
-                Text(
-                    engine.isOfflineDistribution
-                        ? String(localized: "Offline edition: both transcription models and the vocabulary model are included. No model downloads or API key are required.", bundle: bundle)
-                        : String(localized: "Both models run locally with similar speed, download size, and memory use. No API key is required.", bundle: bundle)
-                )
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            modelSelectionSection
 
-                if !engine.isOfflineDistribution {
-                    Divider()
+            Divider()
+            modelSupplementaryView()
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Hugging Face Token", bundle: bundle)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-
-                        Text("Optional. Increases download rate limits. Free at huggingface.co/settings/tokens", bundle: bundle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        HStack {
-                            if showHfToken {
-                                TextField("hf_...", text: $hfTokenInput)
-                                    .textFieldStyle(.roundedBorder)
-                            } else {
-                                SecureField("hf_...", text: $hfTokenInput)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-
-                            Button {
-                                showHfToken.toggle()
-                            } label: {
-                                Image(systemName: showHfToken ? "eye.slash" : "eye")
-                            }
-                            .buttonStyle(.borderless)
-
-                            if hasStoredHfToken {
-                                Button(String(localized: "Remove", bundle: bundle)) {
-                                    hfTokenInput = ""
-                                    tokenValidationResult = nil
-                                    isValidatingToken = false
-                                    engine.clearHuggingFaceToken()
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-
-                            Button(String(localized: "Save", bundle: bundle)) {
-                                validateAndSaveHuggingFaceToken()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .disabled(trimmedHfTokenInput.isEmpty || isValidatingToken)
-                        }
-
-                        if isValidatingToken {
-                            HStack(spacing: 4) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Validating token...", bundle: bundle)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } else if let tokenValidationResult {
-                            HStack(spacing: 4) {
-                                Image(systemName: tokenValidationResult ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundStyle(tokenValidationResult ? .green : .red)
-                                Text(
-                                    tokenValidationResult
-                                        ? String(localized: "Valid Hugging Face Token", bundle: bundle)
-                                        : String(localized: "Invalid Hugging Face Token", bundle: bundle)
-                                )
-                                .font(.caption)
-                                .foregroundStyle(tokenValidationResult ? .green : .red)
-                            }
-                        }
-                    }
-                }
-
-                Divider()
-
-                // Model version picker
-                HStack {
-                    Text("Model Version", bundle: bundle)
-                    Spacer()
-                    Picker("", selection: $selectedVersion) {
-                        ForEach(ParakeetVersion.allCases, id: \.self) { version in
-                            Text(version.modelDef.displayName).tag(version)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .fixedSize()
-                    .disabled(modelState == .downloading)
-                }
-
-                // Model info and action
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(selectedVersion.modelDef.displayName)
-                            .font(.body)
-                        Text("\(selectedVersion.modelDef.sizeDescription) - RAM: \(selectedVersion.modelDef.ramRequirement)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(selectedVersion.settingsDescription(bundle: bundle))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer()
-
-                    switch modelState {
-                    case .notLoaded:
-                        Button(
-                            engine.isOfflineDistribution
-                                ? String(localized: "Load", bundle: bundle)
-                                : String(localized: "Download & Load", bundle: bundle)
-                        ) {
-                            modelState = .downloading
-                            downloadProgress = 0.05
-                            isPolling = true
-                            Task {
-                                await engine.loadModel()
-                                isPolling = false
-                                modelState = engine.modelState
-                                downloadProgress = engine.downloadProgress
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-
-                    case .downloading:
-                        HStack(spacing: 8) {
-                            ProgressView(value: downloadProgress)
-                                .frame(width: 80)
-                            Text("\(Int(downloadProgress * 100))%")
-                                .font(.caption)
-                                .monospacedDigit()
-                        }
-
-                    case .ready:
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                            Button(String(localized: "Unload", bundle: bundle)) {
-                                engine.unloadModel()
-                                modelState = engine.modelState
-                                ctcModelState = engine.ctcModelState
-                                boostingTermCount = 0
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-
-                    case .error(let message):
-                        VStack(alignment: .trailing, spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
-                                Text(message)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            Button(String(localized: "Retry", bundle: bundle)) {
-                                modelState = .downloading
-                                isPolling = true
-                                Task {
-                                    await engine.loadModel()
-                                    isPolling = false
-                                    modelState = engine.modelState
-                                    downloadProgress = engine.downloadProgress
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
-
-                Divider()
-                modelSupplementaryView()
-
-                if case .ready = modelState {
-                    Divider()
-                    vocabularyBoostingSection
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-
-            if engine.canDismissSettingsAfterSetup {
-                Divider()
-
-                HStack {
-                    Spacer()
-
-                    Button(String(localized: "Done", bundle: bundle)) {
-                        finishSetupAndClose()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                }
-                .padding()
-                .background(.bar)
-            }
+            Divider()
+            vocabularyBoostingSection
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
         .onAppear {
             selectedVersion = engine.selectedVersion
             modelState = engine.modelState
@@ -1745,9 +1551,6 @@ private struct ParakeetSettingsView: View {
             boostingEnabled = engine.vocabularyBoostingEnabled
             ctcModelState = engine.ctcModelState
             boostingTermCount = engine.lastBoostingTermCount
-            if let token = engine._hfToken, !token.isEmpty {
-                hfTokenInput = token
-            }
             if case .downloading = engine.modelState { isPolling = true }
         }
         .onChange(of: selectedVersion) { _, newVersion in
@@ -1755,17 +1558,7 @@ private struct ParakeetSettingsView: View {
             engine.selectedVersion = newVersion
             engine.store.setUserDefault(newVersion.rawValue, forKey: "selectedVersion")
             if engine.loadedModelId != nil {
-                // Reload with new version
-                modelState = .downloading
-                downloadProgress = 0.05
-                isPolling = true
-                Task {
-                    engine.unloadModel(clearPersistence: false)
-                    await engine.loadModel()
-                    isPolling = false
-                    modelState = engine.modelState
-                    downloadProgress = engine.downloadProgress
-                }
+                loadSelectedModel(replacingLoadedModel: true)
             }
         }
         .onReceive(pollTimer) { _ in
@@ -1780,32 +1573,222 @@ private struct ParakeetSettingsView: View {
             if case .ready = engineState { isPolling = false }
             else if case .error = engineState { isPolling = false }
         }
-        .onChange(of: hfTokenInput) { _, newValue in
-            let trimmedValue = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmedValue != storedHfToken {
-                tokenValidationResult = nil
+    }
+
+    private var modelSelectionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Choose your transcription model", bundle: bundle)
+                    .font(.subheadline.weight(.semibold))
+                Text("Use v2 for English. Choose v3 when you need another supported language.", bundle: bundle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(ParakeetVersion.allCases, id: \.self) { version in
+                    modelSelectionCard(for: version)
+                }
+            }
+
+            modelStatusRow
+        }
+    }
+
+    private func modelSelectionCard(for version: ParakeetVersion) -> some View {
+        let isSelected = selectedVersion == version
+
+        return Button {
+            selectedVersion = version
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: version.settingsSymbolName)
+                        .font(.title3)
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .frame(width: 30, height: 30)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.09))
+                        )
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(version.modelDef.displayName)
+                            .font(.headline)
+                        Text(version.settingsTitle(bundle: bundle))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Text(version.settingsBadge(bundle: bundle))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(isSelected ? Color.accentColor.opacity(0.13) : Color.secondary.opacity(0.09))
+                        )
+                }
+
+                Text(version.settingsDescription(bundle: bundle))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+
+                HStack(spacing: 14) {
+                    Label(version.modelDef.sizeDescription, systemImage: "arrow.down.circle")
+                    Label("RAM: \(version.modelDef.ramRequirement)", systemImage: "memorychip")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 172, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? Color.accentColor.opacity(0.09) : Color.primary.opacity(0.035))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(
+                        isSelected ? Color.accentColor : Color.secondary.opacity(0.22),
+                        lineWidth: isSelected ? 2 : 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .disabled(modelState == .downloading)
+        .accessibilityValue(isSelected ? String(localized: "Selected", bundle: bundle) : "")
+    }
+
+    private var modelStatusRow: some View {
+        HStack(spacing: 12) {
+            switch modelState {
+            case .notLoaded:
+                Label(
+                    String(localized: "Ready to load \(selectedVersion.modelDef.displayName)", bundle: bundle),
+                    systemImage: "arrow.down.circle"
+                )
+                .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button(
+                    engine.isOfflineDistribution
+                        ? String(localized: "Load Model", bundle: bundle)
+                        : String(localized: "Download & Load", bundle: bundle)
+                ) {
+                    loadSelectedModel()
+                }
+                .buttonStyle(.borderedProminent)
+
+            case .downloading:
+                Label(
+                    engine.isOfflineDistribution
+                        ? String(localized: "Loading \(selectedVersion.modelDef.displayName)…", bundle: bundle)
+                        : String(localized: "Downloading and loading \(selectedVersion.modelDef.displayName)…", bundle: bundle),
+                    systemImage: "arrow.down.circle.fill"
+                )
+
+                Spacer()
+
+                ProgressView(value: downloadProgress)
+                    .frame(width: 110)
+                Text("\(Int(downloadProgress * 100))%")
+                    .font(.caption)
+                    .monospacedDigit()
+
+            case .ready:
+                Label(
+                    String(localized: "\(selectedVersion.modelDef.displayName) is loaded and ready", bundle: bundle),
+                    systemImage: "checkmark.circle.fill"
+                )
+                .foregroundStyle(.green)
+
+                Spacer()
+
+                Button(String(localized: "Unload", bundle: bundle)) {
+                    engine.unloadModel()
+                    modelState = engine.modelState
+                    ctcModelState = engine.ctcModelState
+                    boostingTermCount = 0
+                }
+                .buttonStyle(.bordered)
+
+            case .error(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+
+                Spacer()
+
+                Button(String(localized: "Retry", bundle: bundle)) {
+                    loadSelectedModel()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .font(.callout)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.primary.opacity(0.035))
+        )
+    }
+
+    private func loadSelectedModel(replacingLoadedModel: Bool = false) {
+        modelState = .downloading
+        downloadProgress = 0.05
+        isPolling = true
+        Task {
+            if replacingLoadedModel {
+                engine.unloadModel(clearPersistence: false)
+            }
+            await engine.loadModel()
+            isPolling = false
+            modelState = engine.modelState
+            downloadProgress = engine.downloadProgress
         }
     }
 
     @ViewBuilder
     private var vocabularyBoostingSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Vocabulary Boosting", bundle: bundle)
-                .font(.subheadline)
-                .fontWeight(.medium)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "text.book.closed.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(Color.accentColor.opacity(0.12))
+                    )
 
-            Text("Improves recognition of custom terms from your Dictionary using a secondary CTC model.", bundle: bundle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Vocabulary Boosting", bundle: bundle)
+                        .font(.subheadline.weight(.semibold))
+                    Text("Works with both Parakeet v2 and v3.", bundle: bundle)
+                        .font(.caption.weight(.medium))
+                    Text("Improves names and technical terms from your Dictionary by running an additional small speech model locally. It can add processing time to long dictations.", bundle: bundle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
-            Text("Runs a second local speech model to detect dictionary terms. This can improve names and technical vocabulary, but uses more processing time on long dictations. Leise prepares completed audio windows while you speak to reduce the wait after stopping.", bundle: bundle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 16)
 
-            Toggle(isOn: $boostingEnabled) {
-                Text("Enable Vocabulary Boosting", bundle: bundle)
+                Toggle(isOn: $boostingEnabled) {
+                    Text("Enable Vocabulary Boosting", bundle: bundle)
+                }
+                .labelsHidden()
+                .accessibilityLabel(String(localized: "Enable Vocabulary Boosting", bundle: bundle))
             }
             .onChange(of: boostingEnabled) { _, newValue in
                 engine.setBoostingEnabled(newValue)
@@ -1821,8 +1804,8 @@ private struct ParakeetSettingsView: View {
                             .font(.caption)
                         Text(
                             engine.isOfflineDistribution
-                                ? String(localized: "CTC model included - loads automatically on first use, or:", bundle: bundle)
-                                : String(localized: "CTC model (~100 MB) - downloads automatically on first use, or:", bundle: bundle)
+                                ? String(localized: "Vocabulary model included — it loads automatically on first use.", bundle: bundle)
+                                : String(localized: "Vocabulary model (~100 MB) — downloads automatically on first use.", bundle: bundle)
                         )
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -1846,8 +1829,8 @@ private struct ParakeetSettingsView: View {
                             .controlSize(.small)
                         Text(
                             engine.isOfflineDistribution
-                                ? String(localized: "Loading included CTC model...", bundle: bundle)
-                                : String(localized: "Downloading CTC model...", bundle: bundle)
+                                ? String(localized: "Loading the included vocabulary model…", bundle: bundle)
+                                : String(localized: "Downloading the vocabulary model…", bundle: bundle)
                         )
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -1886,31 +1869,13 @@ private struct ParakeetSettingsView: View {
                         .controlSize(.mini)
                     }
                 }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(Color.primary.opacity(0.035))
+                )
             }
         }
-    }
-
-    private func validateAndSaveHuggingFaceToken() {
-        let trimmedToken = trimmedHfTokenInput
-        guard !trimmedToken.isEmpty else { return }
-
-        isValidatingToken = true
-        tokenValidationResult = nil
-
-        Task {
-            let isValid = await engine.validateHuggingFaceToken(trimmedToken)
-            await MainActor.run {
-                isValidatingToken = false
-                tokenValidationResult = isValid
-                if isValid {
-                    engine.setHuggingFaceToken(trimmedToken)
-                    hfTokenInput = trimmedToken
-                }
-            }
-        }
-    }
-
-    private func finishSetupAndClose() {
-        dismiss()
     }
 }

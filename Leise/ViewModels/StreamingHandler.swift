@@ -5,6 +5,10 @@ import LeiseCore
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "leise-mac", category: "StreamingHandler")
 
 final class StreamingHandler: @unchecked Sendable {
+    typealias BufferDeltaProvider = @Sendable (
+        _ sampleOffset: Int
+    ) -> (samples: [Float], nextOffset: Int)
+
     private static let defaultInitialFallbackDelay: Duration = .milliseconds(1_250)
     private static let defaultFallbackPollInterval: Duration = .seconds(3)
     private static let fallbackPreviewWindowDuration: TimeInterval = 10
@@ -29,6 +33,7 @@ final class StreamingHandler: @unchecked Sendable {
 
     private let modelManager: ModelManagerService
     private let recentBufferProvider: (TimeInterval) -> [Float]
+    private let bufferDeltaProvider: BufferDeltaProvider?
     private let fullBufferProvider: (@Sendable () -> [Float])?
     private let bufferDurationProvider: (@Sendable () -> TimeInterval)?
     private let initialFallbackDelay: Duration
@@ -40,6 +45,7 @@ final class StreamingHandler: @unchecked Sendable {
     init(
         modelManager: ModelManagerService,
         recentBufferProvider: @escaping (TimeInterval) -> [Float],
+        bufferDeltaProvider: BufferDeltaProvider? = nil,
         fullBufferProvider: (@Sendable () -> [Float])? = nil,
         bufferDurationProvider: (@Sendable () -> TimeInterval)? = nil,
         initialFallbackDelay: Duration = StreamingHandler.defaultInitialFallbackDelay,
@@ -47,6 +53,7 @@ final class StreamingHandler: @unchecked Sendable {
     ) {
         self.modelManager = modelManager
         self.recentBufferProvider = recentBufferProvider
+        self.bufferDeltaProvider = bufferDeltaProvider
         self.fullBufferProvider = fullBufferProvider
         self.bufferDurationProvider = bufferDurationProvider
         self.initialFallbackDelay = initialFallbackDelay
@@ -76,9 +83,10 @@ final class StreamingHandler: @unchecked Sendable {
             return
         }
 
+        let canReadFullBuffer = bufferDeltaProvider != nil
+            || (fullBufferProvider != nil && bufferDurationProvider != nil)
         if let sessionID,
-           let fullBufferProvider,
-           let bufferDurationProvider,
+           canReadFullBuffer,
            modelManager.shouldPrecomputeFinalTranscription(
             engineOverrideId: engineOverrideId,
             selectedProviderId: selectedProviderId,
@@ -89,6 +97,7 @@ final class StreamingHandler: @unchecked Sendable {
                 guard let self else { return }
                 await self.runFinalTranscriptionPrecomputationLoop(
                     sessionID: sessionID,
+                    bufferDeltaProvider: bufferDeltaProvider,
                     fullBufferProvider: fullBufferProvider,
                     bufferDurationProvider: bufferDurationProvider,
                     streamPrompt: streamPrompt,
@@ -180,8 +189,9 @@ final class StreamingHandler: @unchecked Sendable {
 
     private func runFinalTranscriptionPrecomputationLoop(
         sessionID: UUID,
-        fullBufferProvider: @escaping @Sendable () -> [Float],
-        bufferDurationProvider: @escaping @Sendable () -> TimeInterval,
+        bufferDeltaProvider: BufferDeltaProvider?,
+        fullBufferProvider: (@Sendable () -> [Float])?,
+        bufferDurationProvider: (@Sendable () -> TimeInterval)?,
         streamPrompt: String,
         dictionaryTermHints: [DictionaryTermHint],
         engineOverrideId: String?,
@@ -190,17 +200,40 @@ final class StreamingHandler: @unchecked Sendable {
         stateCheck: @escaping @MainActor @Sendable () -> Bool
     ) async {
         var nextRequiredDuration = Self.firstPrecomputationDuration
+        var nextSampleOffset = 0
+        var incrementalBuffer: [Float] = []
+        incrementalBuffer.reserveCapacity(Int(Self.firstPrecomputationDuration * Self.livePreviewSampleRate))
 
         while !Task.isCancelled {
             guard await stateCheck() else { break }
-            let availableDuration = bufferDurationProvider()
+
+            let availableDuration: TimeInterval
+            let buffer: [Float]
+            if let bufferDeltaProvider {
+                var delta = bufferDeltaProvider(nextSampleOffset)
+                if delta.nextOffset < nextSampleOffset {
+                    // The backing recording was reset. Rebuild this session's
+                    // accumulator from the new buffer rather than mixing sessions.
+                    nextSampleOffset = 0
+                    incrementalBuffer.removeAll(keepingCapacity: true)
+                    delta = bufferDeltaProvider(0)
+                }
+                incrementalBuffer.append(contentsOf: delta.samples)
+                nextSampleOffset = delta.nextOffset
+                availableDuration = Double(incrementalBuffer.count) / Self.livePreviewSampleRate
+                buffer = incrementalBuffer
+            } else if let fullBufferProvider, let bufferDurationProvider {
+                availableDuration = bufferDurationProvider()
+                buffer = availableDuration >= nextRequiredDuration ? fullBufferProvider() : []
+            } else {
+                break
+            }
 
             if availableDuration >= nextRequiredDuration {
                 repeat {
                     nextRequiredDuration += Self.subsequentPrecomputationStride
                 } while availableDuration >= nextRequiredDuration
 
-                let buffer = fullBufferProvider()
                 await modelManager.precomputeFinalTranscription(
                     audioSamples: buffer,
                     sessionID: sessionID,

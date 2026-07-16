@@ -1,4 +1,5 @@
 import LeiseCore
+import os
 import XCTest
 @testable import Leise
 
@@ -102,10 +103,20 @@ final class StreamingHandlerTests: XCTestCase {
         let engine = TestTranscriptionEngine(allowsFinalTranscriptionPrecomputation: true)
         let sessionID = UUID()
         let samples = Array(repeating: Float(0.1), count: 15 * 16_000)
+        let deltaCalls = OSAllocatedUnfairLock(initialState: [Int]())
+        let fullBufferReadCount = OSAllocatedUnfairLock(initialState: 0)
         let handler = StreamingHandler(
             modelManager: ModelManagerService(engine: engine),
             recentBufferProvider: { _ in [] },
-            fullBufferProvider: { samples },
+            bufferDeltaProvider: { sampleOffset in
+                deltaCalls.withLock { $0.append(sampleOffset) }
+                let start = min(max(0, sampleOffset), samples.count)
+                return (Array(samples.dropFirst(start)), samples.count)
+            },
+            fullBufferProvider: {
+                fullBufferReadCount.withLock { $0 += 1 }
+                return samples
+            },
             bufferDurationProvider: { 15 },
             initialFallbackDelay: .seconds(10),
             fallbackPollInterval: .seconds(10)
@@ -132,7 +143,10 @@ final class StreamingHandlerTests: XCTestCase {
         XCTAssertEqual(engine.requests.count, 0)
         XCTAssertEqual(engine.precomputationRequests.count, 1)
         XCTAssertEqual(engine.precomputationRequests.first?.sessionID, sessionID)
+        XCTAssertEqual(engine.precomputationRequests.first?.audio.samples.count, samples.count)
         XCTAssertEqual(engine.discardedPrecomputationSessionIDs, [])
+        XCTAssertEqual(fullBufferReadCount.withLock { $0 }, 0)
+        XCTAssertEqual(deltaCalls.withLock { $0.first }, 0)
 
         handler.discardFinalPrecomputation()
         XCTAssertEqual(engine.discardedPrecomputationSessionIDs, [sessionID])

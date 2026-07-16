@@ -259,6 +259,10 @@ final class DictationViewModel: ObservableObject {
             recentBufferProvider: { [weak audioRecordingService] maxDuration in
                 audioRecordingService?.getRecentBuffer(maxDuration: maxDuration) ?? []
             },
+            bufferDeltaProvider: { [weak audioRecordingService] sampleOffset in
+                audioRecordingService?.getBufferDelta(since: sampleOffset)
+                    ?? (samples: [], nextOffset: sampleOffset)
+            },
             fullBufferProvider: { [weak audioRecordingService] in
                 audioRecordingService?.getCurrentBuffer() ?? []
             },

@@ -26,6 +26,41 @@ for provenance and [TRADEMARK.md](TRADEMARK.md) for the upstream trademark notic
 - Configurable filler-word cleanup and spoken-punctuation handling
 - Built-in terminology packs for specialized vocabulary
 
+## Installation
+
+### Homebrew — recommended
+
+```sh
+brew install --cask zoltanf/leise/leise
+```
+
+This adds the `zoltanf/homebrew-leise` tap automatically and installs the latest fully offline
+release, including Parakeet v2, Parakeet v3, and vocabulary boosting, in `/Applications`. To
+update later:
+
+```sh
+brew update
+brew upgrade --cask leise
+```
+
+### Direct download
+
+Download the on-demand or fully offline edition from the
+[Releases page](https://github.com/zoltanf/Leise/releases), then drag `Leise.app` to
+`/Applications`.
+
+### macOS Gatekeeper
+
+Leise community releases are ad-hoc signed but are not notarized by Apple. If macOS says that
+Leise cannot be opened or is damaged, remove its quarantine attribute and open it again:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Leise.app
+```
+
+You can also Control-click `Leise.app` in Finder and choose **Open**. The Homebrew cask shows
+the same first-launch instruction after installation when it is needed.
+
 ## Requirements
 
 - macOS 14 or newer

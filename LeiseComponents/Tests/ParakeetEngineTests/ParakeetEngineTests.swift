@@ -408,6 +408,12 @@ final class ParakeetEngineImplementationTests: XCTestCase {
         XCTAssertFalse(engine.isConfigured)
     }
 
+    func testInitializationDefaultsToEnglishOnlyV2() throws {
+        let engine = makeEngine(store: try TestStore())
+
+        XCTAssertEqual(engine.supportedLanguages, ["en"])
+    }
+
     func testInitializationKeepsPersistedSelectedModelVisibleBeforeRestoreCompletes() throws {
         let host = try TestStore(defaults: [
             "selectedModel": "parakeet-tdt-0.6b-v2",
@@ -518,6 +524,19 @@ final class ParakeetEngineImplementationTests: XCTestCase {
         XCTAssertEqual(enabledEngine.dictionaryTermsSupport, .available)
     }
 
+    func testVocabularyBoostingIsAvailableForBothParakeetModels() throws {
+        for modelID in ["parakeet-tdt-0.6b-v2", "parakeet-tdt-0.6b-v3"] {
+            let host = try TestStore(defaults: [
+                "selectedModel": modelID,
+                "vocabularyBoostingEnabled": true,
+            ])
+            let engine = makeEngine(store: host)
+
+            XCTAssertEqual(engine.selectedModelID, modelID)
+            XCTAssertEqual(engine.dictionaryTermsSupport, .available)
+        }
+    }
+
     func testVocabularyHintsPreferStructuredHintsOverPrompt() throws {
         let hints = ParakeetEngineImplementation.vocabularyHints(
             prompt: "PromptTerm",
@@ -549,20 +568,6 @@ final class ParakeetEngineImplementationTests: XCTestCase {
         ])
 
         XCTAssertEqual(signature, "Alpha|auto\u{1F}Beta|0.6500")
-    }
-
-    func testSettingsDismissalRequiresOnlyBaseModelReadiness() throws {
-        let host = try TestStore(defaults: ["vocabularyBoostingEnabled": true])
-        let engine = makeEngine(store: host)
-
-        XCTAssertFalse(engine.canDismissSettingsAfterSetup)
-
-        engine.ctcModelState = .ready
-        XCTAssertFalse(engine.canDismissSettingsAfterSetup)
-
-        engine.modelState = .ready
-        engine.ctcModelState = .downloading
-        XCTAssertTrue(engine.canDismissSettingsAfterSetup)
     }
 
     func testEnablingVocabularyBoostingPersistsAndNotifiesCapabilityChange() throws {

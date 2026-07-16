@@ -213,3 +213,10 @@ release_options=(
 log "creating GitHub release"
 gh release create "$tag" "${artifacts[@]}" "${release_options[@]}"
 log "published: https://github.com/$github_repo/releases/tag/$tag"
+
+if [[ "$draft" == false ]]; then
+  log "updating the Homebrew cask with the verified offline DMG"
+  GH_REPO="$github_repo" bash "$repo_root/scripts/publish-homebrew-cask.sh" --version "$version"
+else
+  log "skipping Homebrew cask update for the draft release"
+fi

@@ -23,9 +23,10 @@ Options:
   --no-clean     Reuse the existing Release DerivedData and offline-model cache.
   -h, --help     Show this help message.
 
-The offline edition preparation downloads about 1 GB of model assets once and
-caches them in .build/OfflineModels. Artifacts are written to dist/. No Apple
-Developer account is required. Apps are ad-hoc signed and not Apple-notarized.
+The offline edition restores a verified, pinned model bundle from GitHub Releases
+when .build/OfflineModels is missing, then reuses that cache. Artifacts are
+written to dist/. No Apple Developer account is required. Apps are ad-hoc signed
+and not Apple-notarized.
 EOF
 }
 

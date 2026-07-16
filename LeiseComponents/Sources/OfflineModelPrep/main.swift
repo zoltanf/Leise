@@ -4,15 +4,24 @@ import Foundation
 @main
 struct OfflineModelPrep {
     static func main() async throws {
-        guard CommandLine.arguments.count == 2 else {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        let validateOnly: Bool
+        let destinationPath: String
+        if arguments.count == 1 {
+            validateOnly = false
+            destinationPath = arguments[0]
+        } else if arguments.count == 2, arguments[0] == "--validate" {
+            validateOnly = true
+            destinationPath = arguments[1]
+        } else {
             FileHandle.standardError.write(
-                Data("Usage: OfflineModelPrep <OfflineModels directory>\n".utf8)
+                Data("Usage: OfflineModelPrep [--validate] <OfflineModels directory>\n".utf8)
             )
             throw ExitCode.usage
         }
 
         let destination = URL(
-            fileURLWithPath: CommandLine.arguments[1],
+            fileURLWithPath: destinationPath,
             isDirectory: true
         ).standardizedFileURL
         try FileManager.default.createDirectory(
@@ -24,18 +33,20 @@ struct OfflineModelPrep {
         let v3 = destination.appendingPathComponent(Repo.parakeetV3.folderName, isDirectory: true)
         let ctc = destination.appendingPathComponent(Repo.parakeetCtc110m.folderName, isDirectory: true)
 
-        if !AsrModels.modelsExist(at: v2, version: .v2) {
-            print("Preparing \(Repo.parakeetV2.remotePath) in \(destination.path)")
-            try await AsrModels.download(to: v2, version: .v2)
-        }
-        if !AsrModels.modelsExist(at: v3, version: .v3) {
-            print("Preparing \(Repo.parakeetV3.remotePath) in \(destination.path)")
-            try await AsrModels.download(to: v3, version: .v3)
-        }
-        if !CtcModels.modelsExist(at: ctc)
-            || !FileManager.default.fileExists(atPath: ctc.appendingPathComponent("tokenizer.json").path) {
-            print("Preparing \(Repo.parakeetCtc110m.remotePath) in \(destination.path)")
-            try await CtcModels.download(to: ctc, variant: .ctc110m, force: true)
+        if !validateOnly {
+            if !AsrModels.modelsExist(at: v2, version: .v2) {
+                print("Preparing \(Repo.parakeetV2.remotePath) in \(destination.path)")
+                try await AsrModels.download(to: v2, version: .v2)
+            }
+            if !AsrModels.modelsExist(at: v3, version: .v3) {
+                print("Preparing \(Repo.parakeetV3.remotePath) in \(destination.path)")
+                try await AsrModels.download(to: v3, version: .v3)
+            }
+            if !CtcModels.modelsExist(at: ctc)
+                || !FileManager.default.fileExists(atPath: ctc.appendingPathComponent("tokenizer.json").path) {
+                print("Preparing \(Repo.parakeetCtc110m.remotePath) in \(destination.path)")
+                try await CtcModels.download(to: ctc, variant: .ctc110m, force: true)
+            }
         }
 
         try require(

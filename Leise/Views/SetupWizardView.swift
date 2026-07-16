@@ -1359,8 +1359,8 @@ enum SetupWizardParakeetRecommendation {
     }
 
     static func preferredModelId(from models: [TranscriptionModel]) -> String? {
-        models.first { $0.id == "parakeet-tdt-0.6b-v3" }?.id
-            ?? models.first { $0.id.localizedCaseInsensitiveContains("v3") }?.id
+        models.first { $0.id == "parakeet-tdt-0.6b-v2" }?.id
+            ?? models.first { $0.id.localizedCaseInsensitiveContains("v2") }?.id
             ?? models.first?.id
     }
 }

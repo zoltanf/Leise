@@ -1,6 +1,12 @@
 {
   "schemaVersion": 1,
   "edition": "offline",
+  "bundle": {
+    "version": "1",
+    "tag": "offline-models-v1",
+    "asset": "Leise-OfflineModels-v1.tar.gz",
+    "sha256": "0c6f7dbf2b38c2e411a0a7f5c269b202a7ceba27241427d0a93c0e64284e9cc4"
+  },
   "models": [
     {
       "id": "parakeet-tdt-0.6b-v2",
