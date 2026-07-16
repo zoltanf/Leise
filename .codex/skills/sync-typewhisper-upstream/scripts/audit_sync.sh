@@ -24,8 +24,16 @@ require_remote() {
 reject_pattern() {
   local pattern="$1"
   local label="$2"
-  if rg -n --glob '!**/*.xcstrings' --glob '!docs/**' --glob '!TRADEMARK.md' --glob '!FORK.md' "$pattern" Leise LeiseTests Leise.xcodeproj LICENSE-COMMERCIAL.md 2>/dev/null; then
+  local status=0
+  rg -n --glob '!**/*.xcstrings' --glob '!docs/**' --glob '!TRADEMARK.md' --glob '!FORK.md' \
+    "$pattern" Leise LeiseTests Leise.xcodeproj || status=$?
+  if [[ "$status" -eq 0 ]]; then
     echo "error: $label was reintroduced" >&2
+    failed=1
+  elif [[ "$status" -ne 1 ]]; then
+    # rg exit 1 means "no match" (the pass case); anything else is a real error
+    # and must not be silently conflated with a clean result.
+    echo "error: search for '$label' failed (rg exit $status)" >&2
     failed=1
   fi
 }
@@ -37,11 +45,9 @@ reject_pattern 'api\.polar\.sh|LicenseService|SupporterDiscordService' "product 
 reject_pattern 'PremiumSettingsView|LicenseSettingsView|PostUpdateLicensePromptView' "commercial UI"
 reject_pattern 'contentsOfDirectory\(at: pluginsDirectory|Scanning plugins directory' "external plugin loading"
 
-local_filter_count="$(rg -c '\.filter \{ \$0\.isEnabled && \$0\.isBundled && \$0\.manifest\.resolvedHosting == \.local \}' Leise/Services/PluginManager.swift || true)"
-if [[ "${local_filter_count:-0}" -lt 3 ]]; then
-  echo "error: local-only provider filters are missing from PluginManager" >&2
-  failed=1
-fi
+# Leise uses compile-time components; the upstream plugin runtime must never
+# come back through a sync (same invariant as scripts/check_static_components.sh).
+reject_pattern 'PluginManager|LoadedPlugin|LeisePluginSDK' "runtime plugin architecture"
 
 if [[ -e LICENSE-COMMERCIAL.md ]]; then
   echo "error: LICENSE-COMMERCIAL.md was reintroduced" >&2

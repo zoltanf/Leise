@@ -6,7 +6,7 @@ body:
     id: platform
     attributes:
       label: Platform
-      description: Which TypeWhisper app or surface is affected?
+      description: Which Leise app or surface is affected?
       options:
         - macOS
         - iOS
@@ -27,7 +27,7 @@ body:
       label: Steps to Reproduce
       description: How can we reproduce this?
       placeholder: |
-        1. Open TypeWhisper
+        1. Open Leise
         2. Go to ...
         3. Click on ...
         4. See error
@@ -48,7 +48,7 @@ body:
   - type: input
     id: app-version
     attributes:
-      label: TypeWhisper Version
+      label: Leise Version
       placeholder: "e.g. 0.10.0"
     validations:
       required: true
@@ -56,5 +56,5 @@ body:
     id: logs
     attributes:
       label: Diagnostics / Logs
-      description: Export and attach a privacy-safe JSON report from Settings > Advanced > Support Diagnostics > Export Diagnostics or Error Log > Export Diagnostics if possible. The report does not include API keys, audio, or transcription history. You can also paste any relevant log output from Console.app filtered by "TypeWhisper".
+      description: Export and attach a privacy-safe JSON report from Settings > Advanced > Support Diagnostics > Export Diagnostics or Error Log > Export Diagnostics if possible. The report does not include API keys, audio, or transcription history. You can also paste any relevant log output from Console.app filtered by "Leise".
       render: shell

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Guards, package tests, and app tests
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Preflight guards and package tests
+        run: |
+          git fetch origin main
+          scripts/pr-preflight.sh origin/main
+
+      - name: App tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme Leise \
+            -destination 'platform=macOS,arch=arm64' \
+            -quiet

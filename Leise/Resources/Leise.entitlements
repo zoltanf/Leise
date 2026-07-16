@@ -2,12 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.security.network.client</key>
-	<true/>
+	<!-- Hardened Runtime resource access: microphone capture for dictation. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
+	<!-- Hardened Runtime: AppleScript automation (browser URL resolution). -->
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
+	<!-- Hardened Runtime: required to load the CoreML/FluidAudio dylibs that
+	     are not signed with the app's (ad-hoc) team identity. -->
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<true/>
 </dict>
