@@ -1,21 +1,7 @@
 import Foundation
+import LeiseCore
 import SwiftData
 import os.log
-
-enum RuntimeArchitecture {
-    nonisolated(unsafe) static var overrideCurrent: String?
-
-    static var current: String {
-        if let overrideCurrent { return overrideCurrent }
-#if arch(arm64)
-        return "arm64"
-#elseif arch(x86_64)
-        return "x86_64"
-#else
-        return "unknown"
-#endif
-    }
-}
 
 func preferredAppLanguageCode() -> String {
     if let language = UserDefaults.standard.string(forKey: UserDefaultsKeys.preferredAppLanguage),

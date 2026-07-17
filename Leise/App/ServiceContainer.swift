@@ -213,13 +213,24 @@ final class ServiceContainer: ObservableObject {
             errorLogService: errorLogService,
             mediaPlaybackService: mediaPlaybackService,
             postProcessors: builtInComponents.postProcessors,
-            usageStatisticsRecorder: usageStatisticsService
+            usageStatisticsRecorder: usageStatisticsService,
+            openRecoverySettings: { openSettingsWindow in
+                SettingsNavigationCoordinator.shared?.navigate(to: .dictationRecovery)
+                if openSettingsWindow {
+                    ManagedAppWindowOpener.shared.open(id: "settings")
+                }
+            }
         )
         audioRecorderViewModel = AudioRecorderViewModel(
             recorderService: audioRecorderService,
             modelManager: modelManagerService,
             dictionaryService: dictionaryService,
-            audioDeviceService: audioDeviceService
+            audioDeviceService: audioDeviceService,
+            fileTranscriptionEnqueuer: { urls in
+                // Resolved lazily through the composition root: `self` cannot be
+                // captured here because the container is still initializing.
+                ServiceContainer.shared.fileTranscriptionViewModel.addFiles(urls)
+            }
         )
         homeViewModel = HomeViewModel(
             historyService: historyService,

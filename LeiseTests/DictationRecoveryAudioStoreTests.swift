@@ -132,19 +132,16 @@ final class DictationRecoveryAudioStoreTests: XCTestCase {
         store.append([0.1, -0.1])
         _ = try XCTUnwrap(store.preserveActiveRecording())
 
-        let previousSettingsNavigationCoordinator = SettingsNavigationCoordinator.shared
-        addTeardownBlock {
-            SettingsNavigationCoordinator.shared = previousSettingsNavigationCoordinator
-        }
-
         let modelManager = ModelManagerService()
         let navigationCoordinator = SettingsNavigationCoordinator()
-        SettingsNavigationCoordinator.shared = navigationCoordinator
 
         let dictationViewModel = makeDictationViewModel(
             appSupportDirectory: appSupportDirectory,
             modelManager: modelManager,
-            audioRecordingService: AudioRecordingService(recoveryAudioStore: store)
+            audioRecordingService: AudioRecordingService(recoveryAudioStore: store),
+            openRecoverySettings: { _ in
+                navigationCoordinator.navigate(to: .dictationRecovery)
+            }
         )
 
         dictationViewModel.recoverLastRecording(openSettingsWindow: false)
@@ -180,7 +177,8 @@ final class DictationRecoveryAudioStoreTests: XCTestCase {
     private func makeDictationViewModel(
         appSupportDirectory: URL,
         modelManager: ModelManagerService,
-        audioRecordingService: AudioRecordingService
+        audioRecordingService: AudioRecordingService,
+        openRecoverySettings: ((Bool) -> Void)? = nil
     ) -> DictationViewModel {
         let textInsertionService = TextInsertionService()
         let hotkeyService = HotkeyService()
@@ -216,7 +214,8 @@ final class DictationRecoveryAudioStoreTests: XCTestCase {
             speechPunctuationService: SpeechPunctuationService(rulesLoader: punctuationRulesLoader),
             accessibilityAnnouncementService: AccessibilityAnnouncementService(),
             errorLogService: ErrorLogService(appSupportDirectory: appSupportDirectory),
-            mediaPlaybackService: MediaPlaybackService(startListening: false)
+            mediaPlaybackService: MediaPlaybackService(startListening: false),
+            openRecoverySettings: openRecoverySettings
         )
     }
 }

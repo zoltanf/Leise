@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import Foundation
+import LeiseCore
 import os.log
 
 private let logger = Logger(subsystem: AppConstants.loggerSubsystem, category: "ErrorLogService")

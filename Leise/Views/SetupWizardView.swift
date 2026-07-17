@@ -1443,23 +1443,12 @@ enum SetupWizardDefaultHotkey {
     }
 }
 
-enum SetupWizardParakeetRecommendation {
-    static let providerId = "parakeet"
-    static let manifestId = "com.leise.parakeet"
-    static let v2ModelId = "parakeet-tdt-0.6b-v2"
-    static let v3ModelId = "parakeet-tdt-0.6b-v3"
-
+extension SetupWizardParakeetRecommendation {
     static var description: String {
         localizedAppText(
             "Best local quality for daily dictation. Runs offline with no API key.",
             de: "Beste lokale Qualität für tägliches Diktieren. Läuft offline ohne API-Key."
         )
-    }
-
-    static func preferredModelId(from models: [TranscriptionModel]) -> String? {
-        models.first { $0.id == v2ModelId }?.id
-            ?? models.first { $0.id.localizedCaseInsensitiveContains("v2") }?.id
-            ?? models.first?.id
     }
 
     static func bundledModelCopy(for model: TranscriptionModel) -> (title: String, subtitle: String) {
@@ -1498,22 +1487,6 @@ enum SetupWizardEngineSelection {
     }
 }
 
-enum SetupWizardEngineReadiness {
-    static func isReady(canUseForTranscription: Bool, isConfigured: Bool) -> Bool {
-        canUseForTranscription && isConfigured
-    }
-}
-
-enum SetupWizardParakeetModelSelection {
-    static func isLoaded(
-        requestedModelId: String,
-        loadedModelId: String?,
-        isConfigured: Bool
-    ) -> Bool {
-        isConfigured && requestedModelId == loadedModelId
-    }
-}
-
 enum SetupWizardHotkeyRecorderVisibility {
     static func shouldShow(
         mode: HotkeySlotType,
@@ -1524,12 +1497,9 @@ enum SetupWizardHotkeyRecorderVisibility {
     }
 }
 
-// MARK: - Recommendation Availability
+// MARK: - Recommendation Availability (user-facing copy for LeiseCore resolvers)
 
-enum SetupWizardRecommendationUnavailableReason: Equatable {
-    case appleSiliconOnly
-    case builtInUnavailable
-
+extension SetupWizardRecommendationUnavailableReason {
     var title: String {
         switch self {
         case .appleSiliconOnly:
@@ -1552,34 +1522,6 @@ enum SetupWizardRecommendationUnavailableReason: Equatable {
                 de: "Die integrierte Engine konnte nicht geladen werden. Starte Leise neu und versuche es erneut."
             )
         }
-    }
-}
-
-enum SetupWizardRecommendationAvailability: Equatable {
-    case ready
-    case setupRequired
-    case unavailable(SetupWizardRecommendationUnavailableReason)
-
-    static func resolve(
-        manifestId: String,
-        isInstalled: Bool,
-        isReady: Bool,
-        hasBundledModels: Bool = false,
-        architecture: String = RuntimeArchitecture.current
-    ) -> SetupWizardRecommendationAvailability {
-        if manifestId == SetupWizardParakeetRecommendation.manifestId, architecture != "arm64" {
-            return .unavailable(.appleSiliconOnly)
-        }
-
-        if isReady || hasBundledModels {
-            return .ready
-        }
-
-        if isInstalled {
-            return .setupRequired
-        }
-
-        return .unavailable(.builtInUnavailable)
     }
 }
 

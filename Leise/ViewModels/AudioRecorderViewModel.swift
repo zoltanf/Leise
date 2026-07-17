@@ -191,6 +191,9 @@ final class AudioRecorderViewModel: ObservableObject {
     private let defaults: UserDefaults
     private let streamingHandler: StreamingHandler
     private let livePreviewStartObserver: (() -> Void)?
+    /// Hands recordings to file transcription; injected by the composition
+    /// root so this view model does not reach into ServiceContainer.shared.
+    private let fileTranscriptionEnqueuer: (([URL]) -> Void)?
     private var cancellables = Set<AnyCancellable>()
     private var transientTranscriptionFailures: [String: RecordingTranscriptionFailure] = [:]
     private var isInitialized = false
@@ -201,8 +204,10 @@ final class AudioRecorderViewModel: ObservableObject {
         dictionaryService: DictionaryService,
         audioDeviceService: AudioDeviceService = AudioDeviceService(initialInputDevices: [], monitorDeviceChanges: false),
         defaults: UserDefaults = .standard,
-        livePreviewStartObserver: (() -> Void)? = nil
+        livePreviewStartObserver: (() -> Void)? = nil,
+        fileTranscriptionEnqueuer: (([URL]) -> Void)? = nil
     ) {
+        self.fileTranscriptionEnqueuer = fileTranscriptionEnqueuer
         self.recorderService = recorderService
         self.audioDeviceService = audioDeviceService
         self.modelManager = modelManager
@@ -525,7 +530,7 @@ final class AudioRecorderViewModel: ObservableObject {
     }
 
     func transcribeRecording(_ item: RecordingItem) {
-        ServiceContainer.shared.fileTranscriptionViewModel.addFiles([item.url])
+        fileTranscriptionEnqueuer?([item.url])
     }
 
     func openRecordingsFolder() {

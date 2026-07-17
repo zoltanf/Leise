@@ -144,6 +144,9 @@ final class DictationViewModel: ObservableObject {
     private let settingsViewModel: SettingsViewModel
     private let historyService: HistoryService
     private let usageStatisticsRecorder: UsageStatisticsRecording?
+    /// Navigates to the recovery settings screen; injected by the composition
+    /// root so the view model does not reach for global singletons.
+    private let openRecoverySettings: ((_ openSettingsWindow: Bool) -> Void)?
     private let recentTranscriptionStore: RecentTranscriptionStore
     private let profileService: ProfileService
     private let audioDuckingService: AudioDuckingService
@@ -231,8 +234,10 @@ final class DictationViewModel: ObservableObject {
         errorLogService: ErrorLogService,
         mediaPlaybackService: MediaPlaybackService,
         postProcessors: [any TextPostProcessor] = [],
-        usageStatisticsRecorder: UsageStatisticsRecording? = nil
+        usageStatisticsRecorder: UsageStatisticsRecording? = nil,
+        openRecoverySettings: ((_ openSettingsWindow: Bool) -> Void)? = nil
     ) {
+        self.openRecoverySettings = openRecoverySettings
         self.audioRecordingService = audioRecordingService
         self.textInsertionService = textInsertionService
         self.hotkeyService = hotkeyService
@@ -1620,13 +1625,7 @@ final class DictationViewModel: ObservableObject {
 
     func recoverLastRecording(openSettingsWindow: Bool = true) {
         guard audioRecordingService.latestRecoveryRecordingURL != nil else { return }
-
-        if let navigationCoordinator = SettingsNavigationCoordinator.shared {
-            navigationCoordinator.navigate(to: .dictationRecovery)
-        }
-        if openSettingsWindow {
-            ManagedAppWindowOpener.shared.open(id: "settings")
-        }
+        openRecoverySettings?(openSettingsWindow)
     }
 
     func triggerRecentTranscriptionsPalette() {
