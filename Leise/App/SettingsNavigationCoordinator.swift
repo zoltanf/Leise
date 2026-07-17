@@ -8,7 +8,7 @@ struct SettingsNavigationRequest: Identifiable, Equatable {
 
 @MainActor
 final class SettingsNavigationCoordinator: ObservableObject {
-    nonisolated(unsafe) static var shared: SettingsNavigationCoordinator!
+    static let shared = SettingsNavigationCoordinator()
 
     @Published private(set) var request: SettingsNavigationRequest?
 

@@ -201,7 +201,9 @@ enum HistoryExporter {
         case .plainText:
             content = sorted.map { exportPlainText($0) }.joined(separator: "\n\n")
         case .json:
-            let jsonStrings = sorted.map { exportJSON($0) }
+            // Skip records that fail serialization rather than embedding
+            // empty objects; exportJSON logs each failure.
+            let jsonStrings = sorted.map { exportJSON($0) }.filter { $0 != "{}" }
             content = "[\n" + jsonStrings.joined(separator: ",\n") + "\n]"
         }
 

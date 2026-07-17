@@ -135,6 +135,9 @@ final class HomeViewModel: ObservableObject {
     @Published var navigateToHistory = false
     @Published var pendingHistoryAppBundleIdentifier: String?
     @Published var pendingHistoryTimeRange: HistoryTimeRange = .all
+    /// When set, History opens with this record selected (tapping a specific
+    /// recent transcription should show that record, not an unfiltered list).
+    @Published var pendingHistoryRecordID: UUID?
     @Published var hasAnyTranscriptions = false
 
     @Published var appUsage: [RankedUsageItem] = []
@@ -308,6 +311,7 @@ final class HomeViewModel: ObservableObject {
     func clearPendingHistoryNavigation() {
         pendingHistoryAppBundleIdentifier = nil
         pendingHistoryTimeRange = .all
+        pendingHistoryRecordID = nil
     }
 
     private struct PeriodStats {

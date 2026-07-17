@@ -236,7 +236,6 @@ struct LeiseApp: App {
 
         // Trigger ServiceContainer initialization
         _ = ServiceContainer.shared
-        SettingsNavigationCoordinator.shared = SettingsNavigationCoordinator()
 
         Task { @MainActor in
             await ServiceContainer.shared.initialize()
@@ -284,22 +283,23 @@ final class ManagedAppWindowOpener {
 
         if let openWindow {
             openWindow(id: id)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                guard let window = self.managedWindow(id: id) else { return }
+                self.reopenExistingWindow(window, sourceApplication: sourceApplication)
+            }
         } else {
             NotificationCenter.default.post(
                 name: .openManagedAppWindow,
                 object: nil,
                 userInfo: ["id": id]
             )
+            // The retry re-fronts the window itself; scheduling the deferred
+            // re-front here too would double-activate it.
             if remainingAttempts > 0 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     self.open(id: id, remainingAttempts: remainingAttempts - 1)
                 }
             }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            guard let window = self.managedWindow(id: id) else { return }
-            self.reopenExistingWindow(window, sourceApplication: sourceApplication)
         }
     }
 
@@ -415,7 +415,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Auto-open the standalone setup assistant while first-run setup is incomplete.
         if ServiceContainer.shared.homeViewModel.showSetupWizard {
             UserDefaults.standard.set(false, forKey: UserDefaultsKeys.setupWizardCompleted)
-            ServiceContainer.shared.homeViewModel.showSetupWizard = true
             NSApp.setActivationPolicy(.regular)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.openSetupWindow()

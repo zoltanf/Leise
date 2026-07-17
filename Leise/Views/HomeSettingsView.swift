@@ -550,6 +550,7 @@ struct HomeSettingsView: View {
                             Button {
                                 viewModel.pendingHistoryAppBundleIdentifier = nil
                                 viewModel.pendingHistoryTimeRange = .all
+                                viewModel.pendingHistoryRecordID = record.id
                                 viewModel.navigateToHistory = true
                             } label: {
                                 HStack {

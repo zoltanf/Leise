@@ -124,6 +124,9 @@ struct SettingsView: View {
                 let historyViewModel = ServiceContainer.shared.historyViewModel
                 historyViewModel.selectedAppFilter = homeViewModel.pendingHistoryAppBundleIdentifier
                 historyViewModel.selectedTimeRange = homeViewModel.pendingHistoryTimeRange
+                if let recordID = homeViewModel.pendingHistoryRecordID {
+                    historyViewModel.selectedRecordIDs = [recordID]
+                }
                 selectedTab = .history
                 homeViewModel.navigateToHistory = false
                 homeViewModel.clearPendingHistoryNavigation()

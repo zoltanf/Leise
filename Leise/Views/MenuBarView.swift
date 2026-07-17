@@ -280,6 +280,10 @@ struct MenuBarView: View {
 
     var body: some View {
         Group {
+            // Deliberate body side effect: a MenuBarExtra's content receives
+            // onAppear only when the menu opens, but AppKit-side callers need
+            // the environment's openWindow action from the first body
+            // evaluation at launch (setup-wizard auto-open). Idempotent.
             let _ = { ManagedAppWindowOpener.shared.openWindow = openWindow }()
 
             Label(status.statusText, systemImage: status.statusImage)

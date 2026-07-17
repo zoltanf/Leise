@@ -85,6 +85,11 @@ final class DictationRecoveryAudioStore: @unchecked Sendable {
         }
     }
 
+    /// The store keeps at most this many preserved recordings; the oldest are
+    /// pruned when a new one is preserved, so ambiguous-insertion safety nets
+    /// cannot grow the directory without bound.
+    static let maxStoredRecoveries = 20
+
     @discardableResult
     func preserveActiveRecording() -> URL? {
         queue.sync {
@@ -107,12 +112,21 @@ final class DictationRecoveryAudioStore: @unchecked Sendable {
             do {
                 try fileManager.moveItem(at: activeFileURL, to: recoveryURL)
                 activeSampleCount = 0
+                pruneStoredRecoveriesBeyondLimit()
                 return canonicalFileURL(recoveryURL)
             } catch {
                 activeSampleCount = 0
                 removeItemIfExists(at: activeFileURL)
                 return storedRecoveryURLs().first
             }
+        }
+    }
+
+    private func pruneStoredRecoveriesBeyondLimit() {
+        let urls = storedRecoveryURLs()
+        guard urls.count > Self.maxStoredRecoveries else { return }
+        for url in urls.dropFirst(Self.maxStoredRecoveries) {
+            removeItemIfExists(at: url)
         }
     }
 

@@ -444,7 +444,7 @@ private struct RecordingRow: View {
                         Button {
                             showTranscript.toggle()
                         } label: {
-                            Image(systemName: showTranscript ? "text.quote" : "text.quote")
+                            Image(systemName: "text.quote")
                                 .foregroundStyle(showTranscript ? .accent : .secondary)
                         }
                         .buttonStyle(.borderless)

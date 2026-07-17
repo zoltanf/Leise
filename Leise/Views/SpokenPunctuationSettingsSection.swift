@@ -88,7 +88,6 @@ struct SpokenPunctuationSettingsSection: View {
     }
 
     private func resolvedPunctuationStrategy(for context: ActivePunctuationContext) -> ResolvedPunctuationStrategy? {
-        let _ = punctuationProfileStore.profiles
         return punctuationStrategyResolver.resolve(
             engineId: context.engineId,
             modelId: context.modelId,

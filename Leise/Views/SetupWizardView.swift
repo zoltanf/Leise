@@ -293,7 +293,7 @@ struct SetupWizardView: View {
 
     private func completeSetupAndOpenHome() {
         ServiceContainer.shared.homeViewModel.completeSetupWizard()
-        SettingsNavigationCoordinator.shared?.navigate(to: .home)
+        SettingsNavigationCoordinator.shared.navigate(to: .home)
         dismiss()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {

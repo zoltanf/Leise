@@ -1155,7 +1155,8 @@ final class DictationViewModel: ObservableObject {
         processingPhase = String(localized: "Transcribing...")
 
         guard !Task.isCancelled else { return }
-        transcriptionTask = Task {
+        transcriptionTask = Task { [weak self] in
+            guard let self else { return }
             defer { self.streamingHandler.discardFinalPrecomputation() }
             do {
                 // Wait for browser URL resolution so URL-based profile overrides apply
@@ -1294,6 +1295,10 @@ final class DictationViewModel: ObservableObject {
                     PerformanceMilestones.end(persistenceToken)
                 }
 
+                var insertionUnverified = false
+                if case .pasted(.unverified) = insertionResult {
+                    insertionUnverified = true
+                }
                 if insertionFailed {
                     // The paste observably did not reach the focused text field. The text
                     // stays on the clipboard and the audio is kept for recovery.
@@ -1304,6 +1309,13 @@ final class DictationViewModel: ObservableObject {
                         icon: "doc.on.clipboard",
                         duration: 3.0
                     )
+                } else if insertionUnverified {
+                    // Ambiguous: the app exposes no AX text state (terminals,
+                    // Electron), where paste usually works. Keep the audio as
+                    // a silent safety net — the recovery store is capped — and
+                    // treat the dictation as successful otherwise.
+                    audioRecordingService.preserveActiveRecoveryRecording()
+                    soundService.play(.transcriptionSuccess, enabled: soundFeedbackEnabled)
                 } else {
                     audioRecordingService.discardActiveRecoveryRecording()
                     soundService.play(.transcriptionSuccess, enabled: soundFeedbackEnabled)

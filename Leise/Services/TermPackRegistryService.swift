@@ -108,6 +108,7 @@ final class TermPackRegistryService: ObservableObject {
             return true
         }
 
+        guard fetchState != .loading else { return false }
         fetchState = .loading
 
         guard let registryURL else {
@@ -213,14 +214,30 @@ final class TermPackRegistryService: ObservableObject {
     // MARK: - Version Comparison
 
     static func compareVersions(_ a: String, _ b: String) -> ComparisonResult {
-        let partsA = a.split(separator: ".").compactMap { Int($0) }
-        let partsB = b.split(separator: ".").compactMap { Int($0) }
+        // Compare the numeric prefix of each dot component so pre-release
+        // suffixes are not silently dropped ("1.2.0-beta" != "1.2.0"); when
+        // the numeric parts tie, a plain release sorts above a suffixed one.
+        func components(_ version: String) -> [(number: Int, suffix: String)] {
+            version.split(separator: ".").map { part in
+                let digits = part.prefix(while: \.isNumber)
+                return (Int(digits) ?? 0, String(part.dropFirst(digits.count)))
+            }
+        }
+        let partsA = components(a)
+        let partsB = components(b)
         let count = max(partsA.count, partsB.count)
         for i in 0..<count {
-            let va = i < partsA.count ? partsA[i] : 0
-            let vb = i < partsB.count ? partsB[i] : 0
-            if va < vb { return .orderedAscending }
-            if va > vb { return .orderedDescending }
+            let va = i < partsA.count ? partsA[i] : (number: 0, suffix: "")
+            let vb = i < partsB.count ? partsB[i] : (number: 0, suffix: "")
+            if va.number != vb.number {
+                return va.number < vb.number ? .orderedAscending : .orderedDescending
+            }
+            if va.suffix != vb.suffix {
+                // No suffix (a release) outranks any pre-release suffix.
+                if va.suffix.isEmpty { return .orderedDescending }
+                if vb.suffix.isEmpty { return .orderedAscending }
+                return va.suffix < vb.suffix ? .orderedAscending : .orderedDescending
+            }
         }
         return .orderedSame
     }
