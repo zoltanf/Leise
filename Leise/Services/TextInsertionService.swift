@@ -181,7 +181,7 @@ final class TextInsertionService {
     nonisolated private static func executeAppleScript(_ source: String, timeout: TimeInterval, validateURL: Bool = true) async -> String? {
         let result: String? = await withCheckedContinuation { continuation in
             let hasResumed = OSAllocatedUnfairLock(initialState: false)
-            let resumeOnce: (String?) -> Bool = { value in
+            let resumeOnce: @Sendable (String?) -> Bool = { value in
                 let shouldResume = hasResumed.withLock { resumed -> Bool in
                     guard !resumed else { return false }
                     resumed = true
