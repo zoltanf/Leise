@@ -1,11 +1,14 @@
 import SwiftUI
 import AppKit
 
-enum SettingsTab: Hashable {
-    case home, general, appearance, recording, hotkeys, recorder
+enum SettingsTab: Hashable, CaseIterable {
+    case home, general, appearance, hotkeys, recorder
     case dictationRecovery, fileTranscription, history, dictionary, profiles, parakeet, advanced, errorLog, about
 }
 
+/// The single source of truth for sidebar structure: every tab must appear in
+/// exactly one section here, or it is unreachable from the UI (verified by
+/// `testEverySettingsTabAppearsInExactlyOneSidebarSection`).
 enum SettingsSidebarLayout {
     static let libraryTabs: [SettingsTab] = [.home, .history, .dictationRecovery, .dictionary]
     static let recordingTabs: [SettingsTab] = [.recorder, .fileTranscription]
@@ -19,6 +22,13 @@ enum SettingsSidebarLayout {
         .errorLog,
     ]
     static let aboutTabs: [SettingsTab] = [.about]
+
+    static let sections: [(id: String, tabs: [SettingsTab])] = [
+        ("library", libraryTabs),
+        ("recording", recordingTabs),
+        ("preferences", preferenceTabs),
+        ("about", aboutTabs),
+    ]
 }
 
 private struct SettingsDestination: Identifiable, Hashable {
@@ -42,42 +52,48 @@ struct SettingsView: View {
     @ObservedObject private var homeViewModel = ServiceContainer.shared.homeViewModel
     @ObservedObject private var settingsNavigation = SettingsNavigationCoordinator.shared
 
-    private var destinations: [SettingsDestination] {
-        [
-            SettingsDestination(tab: .home, title: String(localized: "Dashboard"), systemImage: "house", badge: nil),
-            SettingsDestination(tab: .general, title: String(localized: "General"), systemImage: "gear", badge: nil),
-            SettingsDestination(tab: .appearance, title: String(localized: "Appearance"), systemImage: "paintbrush", badge: nil),
-            SettingsDestination(tab: .hotkeys, title: String(localized: "Hotkeys"), systemImage: "keyboard", badge: nil),
-            SettingsDestination(
-                tab: .recorder,
-                title: String(localized: "settings.tab.recorder"),
-                systemImage: "waveform.circle",
-                badge: nil
-            ),
-            SettingsDestination(
-                tab: .dictationRecovery,
-                title: localizedAppText("Recovery", de: "Wiederherstellung"),
-                systemImage: "waveform",
-                badge: nil
-            ),
-            SettingsDestination(tab: .fileTranscription, title: String(localized: "File Transcription"), systemImage: "doc.text", badge: nil),
-            SettingsDestination(tab: .history, title: String(localized: "History"), systemImage: "clock.arrow.circlepath", badge: nil),
-            SettingsDestination(tab: .dictionary, title: String(localized: "Dictionary"), systemImage: "book.closed", badge: nil),
-            SettingsDestination(tab: .profiles, title: String(localized: "Profiles"), systemImage: "person.crop.circle", badge: nil),
-            SettingsDestination(
-                tab: .parakeet,
-                title: String(localized: "Processing"),
-                systemImage: "cpu",
-                badge: nil
-            ),
-            SettingsDestination(tab: .advanced, title: String(localized: "Advanced"), systemImage: "gearshape.2", badge: nil),
-            SettingsDestination(tab: .errorLog, title: String(localized: "Error Log"), systemImage: "exclamationmark.triangle", badge: nil),
+    /// Exhaustive by design: adding a tab without display metadata is a
+    /// compile error rather than a runtime crash.
+    private static func destination(for tab: SettingsTab) -> SettingsDestination {
+        switch tab {
+        case .home:
+            SettingsDestination(tab: .home, title: String(localized: "Dashboard"), systemImage: "house", badge: nil)
+        case .general:
+            SettingsDestination(tab: .general, title: String(localized: "General"), systemImage: "gear", badge: nil)
+        case .appearance:
+            SettingsDestination(tab: .appearance, title: String(localized: "Appearance"), systemImage: "paintbrush", badge: nil)
+        case .hotkeys:
+            SettingsDestination(tab: .hotkeys, title: String(localized: "Hotkeys"), systemImage: "keyboard", badge: nil)
+        case .recorder:
+            SettingsDestination(tab: .recorder, title: String(localized: "settings.tab.recorder"), systemImage: "waveform.circle", badge: nil)
+        case .dictationRecovery:
+            SettingsDestination(tab: .dictationRecovery, title: localizedAppText("Recovery", de: "Wiederherstellung"), systemImage: "waveform", badge: nil)
+        case .fileTranscription:
+            SettingsDestination(tab: .fileTranscription, title: String(localized: "File Transcription"), systemImage: "doc.text", badge: nil)
+        case .history:
+            SettingsDestination(tab: .history, title: String(localized: "History"), systemImage: "clock.arrow.circlepath", badge: nil)
+        case .dictionary:
+            SettingsDestination(tab: .dictionary, title: String(localized: "Dictionary"), systemImage: "book.closed", badge: nil)
+        case .profiles:
+            SettingsDestination(tab: .profiles, title: String(localized: "Profiles"), systemImage: "person.crop.circle", badge: nil)
+        case .parakeet:
+            SettingsDestination(tab: .parakeet, title: String(localized: "Processing"), systemImage: "cpu", badge: nil)
+        case .advanced:
+            SettingsDestination(tab: .advanced, title: String(localized: "Advanced"), systemImage: "gearshape.2", badge: nil)
+        case .errorLog:
+            SettingsDestination(tab: .errorLog, title: String(localized: "Error Log"), systemImage: "exclamationmark.triangle", badge: nil)
+        case .about:
             SettingsDestination(tab: .about, title: String(localized: "About"), systemImage: "info.circle", badge: nil)
-        ].compactMap { $0 }
+        }
     }
 
     private var destinationSections: [SettingsDestinationSection] {
-        settingsDestinationSections(destinations)
+        SettingsSidebarLayout.sections.map { section in
+            SettingsDestinationSection(
+                id: section.id,
+                destinations: section.tabs.map(Self.destination(for:))
+            )
+        }
     }
 
     var body: some View {
@@ -114,16 +130,7 @@ struct SettingsView: View {
             }
         }
         .onReceive(settingsNavigation.$request.compactMap { $0 }) { request in
-            selectedTab = Self.availableTab(request.tab)
-        }
-    }
-
-    static func availableTab(_ tab: SettingsTab) -> SettingsTab {
-        switch tab {
-        case .recording:
-            return .general
-        default:
-            return tab
+            selectedTab = request.tab
         }
     }
 
@@ -142,8 +149,6 @@ struct SettingsView: View {
             GeneralSettingsView()
         case .appearance:
             AppearanceSettingsView()
-        case .recording:
-            GeneralSettingsView()
         case .hotkeys:
             HotkeySettingsView()
         case .recorder:
@@ -218,31 +223,6 @@ private struct SettingsModernShell: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
-}
-
-private func settingsDestination(_ destinations: [SettingsDestination], _ tab: SettingsTab) -> SettingsDestination {
-    destinations.first(where: { $0.tab == tab })!
-}
-
-private func settingsDestinationSections(_ destinations: [SettingsDestination]) -> [SettingsDestinationSection] {
-    return [
-        SettingsDestinationSection(
-            id: "library",
-            destinations: SettingsSidebarLayout.libraryTabs.map { settingsDestination(destinations, $0) }
-        ),
-        SettingsDestinationSection(
-            id: "recording",
-            destinations: SettingsSidebarLayout.recordingTabs.map { settingsDestination(destinations, $0) }
-        ),
-        SettingsDestinationSection(
-            id: "preferences",
-            destinations: SettingsSidebarLayout.preferenceTabs.map { settingsDestination(destinations, $0) }
-        ),
-        SettingsDestinationSection(
-            id: "about",
-            destinations: SettingsSidebarLayout.aboutTabs.map { settingsDestination(destinations, $0) }
-        )
-    ]
 }
 
 private struct SettingsSidebarShell<DetailContent: View>: View {

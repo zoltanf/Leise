@@ -893,6 +893,10 @@ final class MenuBarGroupingTests: XCTestCase {
             SettingsSidebarLayout.preferenceTabs,
             [.general, .parakeet, .hotkeys, .profiles, .appearance, .advanced, .errorLog]
         )
+        XCTAssertEqual(
+            SettingsSidebarLayout.sections.map(\.id),
+            ["library", "recording", "preferences", "about"]
+        )
     }
 
     func testDictionaryIncludesFillerWordsTab() {

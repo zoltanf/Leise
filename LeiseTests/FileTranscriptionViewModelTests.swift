@@ -540,9 +540,15 @@ final class FileTranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: newerRecoveryURL.path))
     }
 
-    func testRecoverySettingsTabRemainsAvailableWithoutRecoveryContent() {
-        XCTAssertEqual(SettingsView.availableTab(.dictationRecovery), .dictationRecovery)
-        XCTAssertEqual(SettingsView.availableTab(.fileTranscription), .fileTranscription)
+    func testEverySettingsTabAppearsInExactlyOneSidebarSection() {
+        let placedTabs = SettingsSidebarLayout.sections.flatMap(\.tabs)
+
+        XCTAssertEqual(placedTabs.count, Set(placedTabs).count, "a tab appears in more than one section")
+        XCTAssertEqual(
+            Set(placedTabs),
+            Set(SettingsTab.allCases),
+            "every tab must be reachable from the sidebar"
+        )
     }
 
     private func makeDefaults() throws -> UserDefaults {
