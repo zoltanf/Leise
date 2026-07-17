@@ -75,25 +75,22 @@ struct AboutSettingsView: View {
                         openSetupWizard()
                     } label: {
                         Label(
-                            localizedAppText("Open Setup Wizard", de: "Setup-Wizard öffnen"),
+                            String(localized: "Open Setup Wizard"),
                             systemImage: "sparkles"
                         )
                     }
                     Spacer()
                 }
 
-                Text(localizedAppText(
-                    "Run the first-time setup flow again without changing your saved settings.",
-                    de: "Starte den Einrichtungsassistenten erneut, ohne deine gespeicherten Einstellungen zu ändern."
-                ))
+                Text(String(localized: "Run the first-time setup flow again without changing your saved settings."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
 
             if let devBuildSource = DevBuildSource.current {
-                Section(localizedAppText("Development Build", de: "Entwicklungs-Build")) {
-                    LabeledContent(localizedAppText("Built", de: "Erstellt"), value: devBuildSource.builtAtUTC)
-                    LabeledContent(localizedAppText("Source", de: "Quelle"), value: devBuildSource.source)
+                Section(String(localized: "Development Build")) {
+                    LabeledContent(String(localized: "Built"), value: devBuildSource.builtAtUTC)
+                    LabeledContent(String(localized: "Source"), value: devBuildSource.source)
 
                     Text(devBuildSource.repository)
                         .font(.caption.monospaced())

@@ -15,15 +15,15 @@ enum RuleMatchKind: String, Sendable {
     var label: String {
         switch self {
         case .appAndWebsite:
-            localizedAppText("App + Website", de: "App + Website")
+            String(localized: "App + Website")
         case .websiteOnly:
-            localizedAppText("Website Only", de: "Nur Website")
+            String(localized: "Website Only")
         case .appOnly:
-            localizedAppText("App Only", de: "Nur App")
+            String(localized: "App Only")
         case .globalFallback:
-            localizedAppText("Global Fallback", de: "Globaler Fallback")
+            String(localized: "Global Fallback")
         case .manualOverride:
-            localizedAppText("Manual Override", de: "Manuell erzwungen")
+            String(localized: "Manual Override")
         }
     }
 }

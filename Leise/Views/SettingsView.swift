@@ -67,7 +67,7 @@ struct SettingsView: View {
         case .recorder:
             SettingsDestination(tab: .recorder, title: String(localized: "settings.tab.recorder"), systemImage: "waveform.circle", badge: nil)
         case .dictationRecovery:
-            SettingsDestination(tab: .dictationRecovery, title: localizedAppText("Recovery", de: "Wiederherstellung"), systemImage: "waveform", badge: nil)
+            SettingsDestination(tab: .dictationRecovery, title: String(localized: "Recovery"), systemImage: "waveform", badge: nil)
         case .fileTranscription:
             SettingsDestination(tab: .fileTranscription, title: String(localized: "File Transcription"), systemImage: "doc.text", badge: nil)
         case .history:
@@ -215,7 +215,7 @@ private struct SettingsModernShell: View {
             .searchable(
                 text: $sidebarSearchText,
                 placement: .sidebar,
-                prompt: Text(localizedAppText("Search Settings", de: "Einstellungen durchsuchen"))
+                prompt: Text(String(localized: "Search Settings"))
             )
             .navigationSplitViewColumnWidth(min: 240, ideal: 270, max: 320)
         } detail: {
@@ -261,8 +261,8 @@ private struct SettingsSidebarShell<DetailContent: View>: View {
                 Button(action: toggleSidebar) {
                     Image(systemName: "sidebar.leading")
                 }
-                .help(localizedAppText("Toggle Sidebar", de: "Seitenleiste ein-/ausblenden"))
-                .accessibilityLabel(localizedAppText("Toggle Sidebar", de: "Seitenleiste ein-/ausblenden"))
+                .help(String(localized: "Toggle Sidebar"))
+                .accessibilityLabel(String(localized: "Toggle Sidebar"))
             }
         }
     }

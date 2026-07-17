@@ -1555,58 +1555,26 @@ final class DictationViewModel: ObservableObject {
         switch match.kind {
         case .appAndWebsite:
             if let domain = match.matchedDomain {
-                base = localizedAppText(
-                    "This profile applies because \(appDescriptor) was detected together with \(domain).",
-                    de: "Dieses Profil greift, weil \(appDescriptor) zusammen mit \(domain) erkannt wurde.",
-                    ja: "\(appDescriptor) と \(domain) が一緒に検出されたため、このプロファイルが適用されます。"
-                )
+                base = String(localized: "This profile applies because \(appDescriptor) was detected together with \(domain).")
             } else {
-                base = localizedAppText(
-                    "This profile applies because the app and website were detected together.",
-                    de: "Dieses Profil greift, weil App und Website zusammen erkannt wurden.",
-                    ja: "アプリとWebサイトが一緒に検出されたため、このプロファイルが適用されます。"
-                )
+                base = String(localized: "This profile applies because the app and website were detected together.")
             }
         case .websiteOnly:
             if let domain = match.matchedDomain {
-                base = localizedAppText(
-                    "This profile applies because \(domain) was detected.",
-                    de: "Dieses Profil greift, weil \(domain) erkannt wurde.",
-                    ja: "\(domain) が検出されたため、このプロファイルが適用されます。"
-                )
+                base = String(localized: "This profile applies because \(domain) was detected.")
             } else {
-                base = localizedAppText(
-                    "This profile applies because the current website was detected.",
-                    de: "Dieses Profil greift, weil die aktuelle Website erkannt wurde.",
-                    ja: "現在のWebサイトが検出されたため、このプロファイルが適用されます。"
-                )
+                base = String(localized: "This profile applies because the current website was detected.")
             }
         case .appOnly:
-            base = localizedAppText(
-                "This profile applies because \(appDescriptor) was detected.",
-                de: "Dieses Profil greift, weil \(appDescriptor) erkannt wurde.",
-                ja: "\(appDescriptor) が検出されたため、このプロファイルが適用されます。"
-            )
+            base = String(localized: "This profile applies because \(appDescriptor) was detected.")
         case .globalFallback:
-            base = localizedAppText(
-                "This profile applies because no more specific profile matched.",
-                de: "Dieses Profil greift, weil kein spezifischeres Profil gepasst hat.",
-                ja: "より具体的なプロファイルに一致しなかったため、このプロファイルが適用されます。"
-            )
+            base = String(localized: "This profile applies because no more specific profile matched.")
         case .manualOverride:
-            base = localizedAppText(
-                "This profile was manually triggered via its keyboard shortcut.",
-                de: "Dieses Profil wurde manuell über seine Tastenkombination ausgelöst.",
-                ja: "このプロファイルはキーボードショートカットで手動実行されました。"
-            )
+            base = String(localized: "This profile was manually triggered via its keyboard shortcut.")
         }
 
         guard match.wonByPriority else { return base }
-        return base + localizedAppText(
-            " Among multiple matching profiles, the higher-priority profile wins here.",
-            de: " Unter mehreren passenden Profilen gewinnt hier das Profil mit höherer Priorität.",
-            ja: " 複数の一致するプロファイルがある場合は、優先度が高いものが選ばれます。"
-        )
+        return base + String(localized: " Among multiple matching profiles, the higher-priority profile wins here.")
     }
 
     var canCopyLastTranscription: Bool {

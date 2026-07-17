@@ -246,7 +246,7 @@ struct AppearanceSettingsView: View {
         Text(String(localized: "Recording Indicator")).tag(NotchIndicatorContent.indicator)
         Text(String(localized: "Timer")).tag(NotchIndicatorContent.timer)
         Text(String(localized: "Waveform")).tag(NotchIndicatorContent.waveform)
-        Text(localizedAppText("Profile", de: "Profil")).tag(NotchIndicatorContent.profile)
+        Text(String(localized: "Profile")).tag(NotchIndicatorContent.profile)
         Text(String(localized: "None")).tag(NotchIndicatorContent.none)
     }
 }

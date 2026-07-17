@@ -13,17 +13,23 @@ func preferredAppLanguageCode() -> String {
         ?? "en"
 }
 
-func localizedAppText(_ english: String, de german: String, ja japanese: String? = nil) -> String {
-    let language = preferredAppLanguageCode()
-    if language.hasPrefix("de") { return german }
-    if language.hasPrefix("ja"), let japanese { return japanese }
-    return english
-}
-
 func localizedAppLanguageName(for code: String) -> String {
-    if code == "auto" { return localizedAppText("Auto-Detect", de: "Automatisch erkennen") }
-    if code == "multi" { return localizedAppText("Multilingual", de: "Mehrsprachig") }
-    return Locale(identifier: preferredAppLanguageCode()).localizedString(forIdentifier: code) ?? code
+    // Language option names must follow the in-app language immediately (the
+    // Locale-based names below do). They cannot go through the string catalog:
+    // String(localized:) resolution is effectively fixed for the process
+    // lifetime, and the app language can differ from it until relaunch.
+    let language = preferredAppLanguageCode()
+    if code == "auto" {
+        if language.hasPrefix("de") { return "Automatisch erkennen" }
+        if language.hasPrefix("ja") { return "自動検出" }
+        return "Auto-Detect"
+    }
+    if code == "multi" {
+        if language.hasPrefix("de") { return "Mehrsprachig" }
+        if language.hasPrefix("ja") { return "多言語" }
+        return "Multilingual"
+    }
+    return Locale(identifier: language).localizedString(forIdentifier: code) ?? code
 }
 
 struct LocalizedAppLanguageOption: Equatable {

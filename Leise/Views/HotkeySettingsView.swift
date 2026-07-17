@@ -128,7 +128,7 @@ private struct MultiHotkeySlotRecorder: View {
     private var addShortcutButton: some View {
         HotkeyRecorderView(
             label: "",
-            title: localizedAppText("Add Shortcut", de: "Shortcut hinzufügen"),
+            title: String(localized: "Add Shortcut"),
             presentation: .iconButton(systemName: "plus.circle"),
             onRecord: { hotkey in record(hotkey) },
             onClear: {}

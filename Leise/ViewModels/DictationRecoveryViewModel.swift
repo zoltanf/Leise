@@ -147,7 +147,7 @@ final class DictationRecoveryViewModel: ObservableObject {
     }
 
     var fileName: String {
-        selectedRecovery?.fileName ?? localizedAppText("No recording", de: "Keine Aufnahme")
+        selectedRecovery?.fileName ?? String(localized: "No recording")
     }
 
     var isProcessing: Bool {
@@ -203,7 +203,7 @@ final class DictationRecoveryViewModel: ObservableObject {
                 guard !text.isEmpty else {
                     updateRecovery(id: recoveryID) { item in
                         item.state = .error
-                        item.errorMessage = localizedAppText("No speech recognized", de: "Keine Sprache erkannt")
+                        item.errorMessage = String(localized: "No speech recognized")
                     }
                     return
                 }
@@ -212,14 +212,14 @@ final class DictationRecoveryViewModel: ObservableObject {
                     timestamp: Date(),
                     wordsCount: text.split(separator: " ").count,
                     durationSeconds: result.duration,
-                    appName: localizedAppText("Dictation Recovery", de: "Dictation-Recovery"),
+                    appName: String(localized: "Dictation Recovery"),
                     appBundleIdentifier: Bundle.main.bundleIdentifier,
                     language: result.detectedLanguage ?? languageSelection.requestedLanguage,
                     engine: result.engineUsed,
                     model: historyModelDisplayName(result: result),
                     rawText: result.text,
                     processedText: text,
-                    pipelineSteps: [localizedAppText("Recovered recording", de: "Wiederhergestellte Aufnahme")]
+                    pipelineSteps: [String(localized: "Recovered recording")]
                 )
 
                 let historyID = UUID()
@@ -227,14 +227,14 @@ final class DictationRecoveryViewModel: ObservableObject {
                     id: historyID,
                     rawText: result.text,
                     finalText: text,
-                    appName: localizedAppText("Dictation Recovery", de: "Dictation-Recovery"),
+                    appName: String(localized: "Dictation Recovery"),
                     appBundleIdentifier: Bundle.main.bundleIdentifier,
                     durationSeconds: result.duration,
                     language: result.detectedLanguage ?? languageSelection.requestedLanguage,
                     engineUsed: result.engineUsed,
                     modelUsed: historyModelDisplayName(result: result),
                     audioSamples: samples,
-                    pipelineSteps: [localizedAppText("Recovered recording", de: "Wiederhergestellte Aufnahme")]
+                    pipelineSteps: [String(localized: "Recovered recording")]
                 )
                 lastSavedRecoveryFileName = url.lastPathComponent
                 lastSavedHistoryRecordID = historyID

@@ -14,16 +14,13 @@ enum AudioInputDeviceCompatibilityIssue: Sendable, Equatable {
     case engineStartFailed
 
     var badgeText: String {
-        localizedAppText("Not compatible", de: "Nicht kompatibel")
+        String(localized: "Not compatible")
     }
 
     var detailText: String {
         switch self {
         case .cannotSetDevice, .invalidInputFormat, .engineStartFailed:
-            return localizedAppText(
-                "This microphone can't be used by Leise for preview or recording.",
-                de: "Dieses Mikrofon kann von Leise nicht für Test oder Aufnahme verwendet werden."
-            )
+            return String(localized: "This microphone can't be used by Leise for preview or recording.")
         }
     }
 }
@@ -68,27 +65,15 @@ enum SelectedInputDeviceError: LocalizedError, Sendable, Equatable {
     var errorDescription: String? {
         switch self {
         case .unavailable:
-            return localizedAppText(
-                "No connected microphone is available.",
-                de: "Kein verbundenes Mikrofon ist verfügbar."
-            )
+            return String(localized: "No connected microphone is available.")
         case .incompatible(let issue):
             return issue.detailText
         case .routingConflict:
-            return localizedAppText(
-                "The selected microphone conflicts with your current audio routing. Disconnect Bluetooth or choose a different input.",
-                de: "Das ausgewählte Mikrofon kollidiert mit deiner aktuellen Audio-Route. Trenne Bluetooth oder wähle ein anderes Eingabegerät."
-            )
+            return String(localized: "The selected microphone conflicts with your current audio routing. Disconnect Bluetooth or choose a different input.")
         case .permissionDenied:
-            return localizedAppText(
-                "Microphone access is required to test an input device.",
-                de: "Zum Testen eines Eingabegeräts ist Mikrofonzugriff erforderlich."
-            )
+            return String(localized: "Microphone access is required to test an input device.")
         case .previewFailed:
-            return localizedAppText(
-                "The microphone test could not be started. Choose another input device and try again.",
-                de: "Der Mikrofontest konnte nicht gestartet werden. Wähle ein anderes Eingabegerät und versuche es erneut."
-            )
+            return String(localized: "The microphone test could not be started. Choose another input device and try again.")
         }
     }
 

@@ -205,7 +205,7 @@ struct IndicatorRecordingContent: View {
                     .padding(.horizontal, sizing.profilePaddingH)
                     .padding(.vertical, sizing.profilePaddingV)
                     .frame(maxWidth: NotchIndicatorLayout.profileChipMaxWidth, alignment: .leading)
-                    .accessibilityLabel(localizedAppText("Active profile", de: "Aktives Profil"))
+                    .accessibilityLabel(String(localized: "Active profile"))
                     .accessibilityValue(name)
             } else {
                 Color.clear.frame(width: 0, height: 0)

@@ -19,48 +19,39 @@ struct AdvancedSettingsView: View {
 
     var body: some View {
         Form {
-            Section(localizedAppText("Backup & Restore", de: "Sichern & Wiederherstellen")) {
-                Text(localizedAppText(
-                    "Export preferences, dictionary entries, profiles, and transcription history to one JSON file, or restore them from a previous backup.",
-                    de: "Exportiert Einstellungen, Wörterbucheinträge, Profile und den Transkriptionsverlauf in eine JSON-Datei oder stellt sie aus einer früheren Sicherung wieder her."
-                ))
+            Section(String(localized: "Backup & Restore")) {
+                Text(String(localized: "Export preferences, dictionary entries, profiles, and transcription history to one JSON file, or restore them from a previous backup."))
                 .foregroundStyle(.secondary)
 
                 HStack {
                     Button(action: exportUserData) {
                         Label(
-                            localizedAppText("Export Backup", de: "Sicherung exportieren"),
+                            String(localized: "Export Backup"),
                             systemImage: "square.and.arrow.up"
                         )
                     }
                     Button(action: chooseBackupToImport) {
                         Label(
-                            localizedAppText("Import Backup", de: "Sicherung importieren"),
+                            String(localized: "Import Backup"),
                             systemImage: "square.and.arrow.down"
                         )
                     }
                 }
 
-                Text(localizedAppText(
-                    "API keys, downloaded models, caches, audio recordings, and custom sound files are not included.",
-                    de: "API-Schlüssel, heruntergeladene Modelle, Caches, Audioaufnahmen und eigene Sounddateien sind nicht enthalten."
-                ))
+                Text(String(localized: "API keys, downloaded models, caches, audio recordings, and custom sound files are not included."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
 
-            Section(localizedAppText("Support Diagnostics", de: "Support-Diagnose")) {
+            Section(String(localized: "Support Diagnostics")) {
                 HStack {
                     Button(action: exportDiagnostics) {
                         Label(
-                            localizedAppText("Export Diagnostics", de: "Diagnose exportieren"),
+                            String(localized: "Export Diagnostics"),
                             systemImage: "square.and.arrow.up"
                         )
                     }
-                    SettingsInfoButton(text: localizedAppText(
-                        "Creates a JSON support report with app, system, permission, settings, and audio-device diagnostics.",
-                        de: "Erstellt einen JSON-Supportbericht mit App-, System-, Berechtigungs-, Einstellungs- und Audiogeräte-Diagnose."
-                    ))
+                    SettingsInfoButton(text: String(localized: "Creates a JSON support report with app, system, permission, settings, and audio-device diagnostics."))
                 }
             }
 
@@ -93,11 +84,8 @@ struct AdvancedSettingsView: View {
 
                 Toggle(isOn: $dictation.microphoneBoostEnabled) {
                     SettingsInfoLabel(
-                        title: localizedAppText("Whisper Mode (AGC)", de: "Whisper-Modus (AGC)"),
-                        info: localizedAppText(
-                            "Automatically raises quiet microphone input before transcription. Useful for low-gain microphones, but very noisy rooms may sound louder too.",
-                            de: "Hebt leise Mikrofoneingaben vor der Transkription automatisch an. Hilft bei Mikrofonen mit niedrigem Pegel, kann in lauten Räumen aber auch Störgeräusche verstärken."
-                        )
+                        title: String(localized: "Whisper Mode (AGC)"),
+                        info: String(localized: "Automatically raises quiet microphone input before transcription. Useful for low-gain microphones, but very noisy rooms may sound louder too.")
                     )
                 }
             }
@@ -155,10 +143,10 @@ struct AdvancedSettingsView: View {
         .padding()
         .frame(minWidth: 500, minHeight: 300)
         .confirmationDialog(
-            localizedAppText("Import Backup?", de: "Sicherung importieren?"),
+            String(localized: "Import Backup?"),
             isPresented: $showImportConfirmation
         ) {
-            Button(localizedAppText("Replace Current Data", de: "Aktuelle Daten ersetzen"), role: .destructive) {
+            Button(String(localized: "Replace Current Data"), role: .destructive) {
                 importPendingBackup()
             }
             Button(String(localized: "Cancel"), role: .cancel) {
@@ -167,10 +155,7 @@ struct AdvancedSettingsView: View {
             }
         } message: {
             if let summary = pendingImportSummary {
-                Text(localizedAppText(
-                    "This replaces current settings and user data with \(summary.dictionaryEntryCount) dictionary entries, \(summary.profileCount) profiles, and \(summary.historyRecordCount) history records. This cannot be undone unless you export a backup first.",
-                    de: "Dabei werden die aktuellen Einstellungen und Benutzerdaten durch \(summary.dictionaryEntryCount) Wörterbucheinträge, \(summary.profileCount) Profile und \(summary.historyRecordCount) Verlaufseinträge ersetzt. Dies kann nur rückgängig gemacht werden, wenn zuvor eine Sicherung exportiert wurde."
-                ))
+                Text(String(localized: "This replaces current settings and user data with \(summary.dictionaryEntryCount) dictionary entries, \(summary.profileCount) profiles, and \(summary.historyRecordCount) history records. This cannot be undone unless you export a backup first."))
             }
         }
         .alert(item: $notice) { notice in
@@ -184,7 +169,7 @@ struct AdvancedSettingsView: View {
 
     private func exportUserData() {
         let panel = NSSavePanel()
-        panel.title = localizedAppText("Export Backup", de: "Sicherung exportieren")
+        panel.title = String(localized: "Export Backup")
         panel.allowedContentTypes = [.json]
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = backupFilename()
@@ -194,15 +179,12 @@ struct AdvancedSettingsView: View {
             do {
                 let summary = try backupService.exportBackup(to: url)
                 notice = SettingsNotice(
-                    title: localizedAppText("Backup Exported", de: "Sicherung exportiert"),
-                    message: localizedAppText(
-                        "Exported \(summary.preferenceCount) settings, \(summary.dictionaryEntryCount) dictionary entries, \(summary.profileCount) profiles, and \(summary.historyRecordCount) history records.",
-                        de: "\(summary.preferenceCount) Einstellungen, \(summary.dictionaryEntryCount) Wörterbucheinträge, \(summary.profileCount) Profile und \(summary.historyRecordCount) Verlaufseinträge wurden exportiert."
-                    )
+                    title: String(localized: "Backup Exported"),
+                    message: String(localized: "Exported \(summary.preferenceCount) settings, \(summary.dictionaryEntryCount) dictionary entries, \(summary.profileCount) profiles, and \(summary.historyRecordCount) history records.")
                 )
             } catch {
                 notice = SettingsNotice(
-                    title: localizedAppText("Export Failed", de: "Export fehlgeschlagen"),
+                    title: String(localized: "Export Failed"),
                     message: error.localizedDescription
                 )
             }
@@ -211,7 +193,7 @@ struct AdvancedSettingsView: View {
 
     private func chooseBackupToImport() {
         let panel = NSOpenPanel()
-        panel.title = localizedAppText("Import Backup", de: "Sicherung importieren")
+        panel.title = String(localized: "Import Backup")
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -224,7 +206,7 @@ struct AdvancedSettingsView: View {
                 showImportConfirmation = true
             } catch {
                 notice = SettingsNotice(
-                    title: localizedAppText("Invalid Backup", de: "Ungültige Sicherung"),
+                    title: String(localized: "Invalid Backup"),
                     message: error.localizedDescription
                 )
             }
@@ -241,15 +223,12 @@ struct AdvancedSettingsView: View {
         do {
             let summary = try backupService.importBackup(from: url)
             notice = SettingsNotice(
-                title: localizedAppText("Backup Imported", de: "Sicherung importiert"),
-                message: localizedAppText(
-                    "Restored \(summary.preferenceCount) settings, \(summary.dictionaryEntryCount) dictionary entries, \(summary.profileCount) profiles, and \(summary.historyRecordCount) history records. Quit and reopen Leise to apply every restored setting.",
-                    de: "\(summary.preferenceCount) Einstellungen, \(summary.dictionaryEntryCount) Wörterbucheinträge, \(summary.profileCount) Profile und \(summary.historyRecordCount) Verlaufseinträge wurden wiederhergestellt. Beenden und öffnen Sie Leise erneut, um alle Einstellungen anzuwenden."
-                )
+                title: String(localized: "Backup Imported"),
+                message: String(localized: "Restored \(summary.preferenceCount) settings, \(summary.dictionaryEntryCount) dictionary entries, \(summary.profileCount) profiles, and \(summary.historyRecordCount) history records. Quit and reopen Leise to apply every restored setting.")
             )
         } catch {
             notice = SettingsNotice(
-                title: localizedAppText("Import Failed", de: "Import fehlgeschlagen"),
+                title: String(localized: "Import Failed"),
                 message: error.localizedDescription
             )
         }
@@ -269,14 +248,14 @@ struct AdvancedSettingsView: View {
 
     private func showDiagnosticsExportFailure(_ error: Error) {
         notice = SettingsNotice(
-            title: localizedAppText("Export Failed", de: "Export fehlgeschlagen"),
+            title: String(localized: "Export Failed"),
             message: error.localizedDescription
         )
     }
 
     private func exportDiagnostics() {
         let panel = NSSavePanel()
-        panel.title = localizedAppText("Export Diagnostics", de: "Diagnose exportieren")
+        panel.title = String(localized: "Export Diagnostics")
         panel.allowedContentTypes = [.json]
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = diagnosticsFilename()

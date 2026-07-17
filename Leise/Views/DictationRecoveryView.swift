@@ -20,7 +20,7 @@ struct DictationRecoveryView: View {
                             .accessibilityHidden(true)
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(localizedAppText("Saved to History", de: "In Verlauf gespeichert"))
+                            Text(String(localized: "Saved to History"))
                                 .font(.body.weight(.medium))
                             Text(lastSavedRecoveryFileName)
                                 .font(.caption)
@@ -43,7 +43,7 @@ struct DictationRecoveryView: View {
                 Section(String(localized: "Recordings")) {
                     if viewModel.recoveries.count > 1 {
                         Picker(
-                            localizedAppText("Recording", de: "Aufnahme"),
+                            String(localized: "Recording"),
                             selection: $viewModel.selectedRecoveryID
                         ) {
                             ForEach(viewModel.recoveries) { recovery in
@@ -60,7 +60,7 @@ struct DictationRecoveryView: View {
             } else if !viewModel.hasRecoveryContent {
                 Section {
                     Label(
-                        localizedAppText("No Recording to Recover", de: "Keine Aufnahme zur Wiederherstellung"),
+                        String(localized: "No Recording to Recover"),
                         systemImage: "waveform"
                     )
                     .foregroundStyle(.secondary)
@@ -151,7 +151,7 @@ struct DictationRecoveryView: View {
             Button(role: .destructive) {
                 viewModel.discardRecovery(recovery)
             } label: {
-                Label(localizedAppText("Discard", de: "Verwerfen"), systemImage: "trash")
+                Label(String(localized: "Discard"), systemImage: "trash")
             }
             .disabled(viewModel.isProcessing)
         }

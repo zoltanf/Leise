@@ -9,10 +9,7 @@ struct ProfilesSettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(String(localized: "Profiles"))
                         .font(.title2.bold())
-                    Text(localizedAppText(
-                        "Apply dictation language and insertion behavior for specific apps or websites.",
-                        de: "Wendet Diktatsprache und Einfügeverhalten für bestimmte Apps oder Websites an."
-                    ))
+                    Text(String(localized: "Apply dictation language and insertion behavior for specific apps or websites."))
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -30,10 +27,7 @@ struct ProfilesSettingsView: View {
                 ContentUnavailableView(
                     String(localized: "No Profiles Yet"),
                     systemImage: "person.crop.circle.badge.plus",
-                    description: Text(localizedAppText(
-                        "Create a profile for an app, website, or global fallback.",
-                        de: "Erstelle ein Profil für eine App, Website oder als globalen Fallback."
-                    ))
+                    description: Text(String(localized: "Create a profile for an app, website, or global fallback."))
                 )
             } else {
                 List(viewModel.profiles) { profile in
@@ -76,26 +70,26 @@ struct ProfilesSettingsView: View {
                     TextField(String(localized: "Name"), text: $viewModel.editorName)
                     Toggle(String(localized: "Enabled"), isOn: $viewModel.editorEnabled)
                 }
-                Section(localizedAppText("Matching", de: "Zuordnung")) {
+                Section(String(localized: "Matching")) {
                     TextField(
-                        localizedAppText("App bundle identifiers, one per line", de: "App-Bundle-IDs, eine pro Zeile"),
+                        String(localized: "App bundle identifiers, one per line"),
                         text: $viewModel.editorBundleIdentifiers,
                         axis: .vertical
                     )
                     TextField(
-                        localizedAppText("Website domains, one per line", de: "Website-Domains, eine pro Zeile"),
+                        String(localized: "Website domains, one per line"),
                         text: $viewModel.editorURLPatterns,
                         axis: .vertical
                     )
                 }
-                Section(localizedAppText("Behavior", de: "Verhalten")) {
-                    TextField(localizedAppText("Language code (blank inherits global)", de: "Sprachcode (leer übernimmt global)"), text: $viewModel.editorInputLanguage)
-                    Picker(localizedAppText("Output format", de: "Ausgabeformat"), selection: $viewModel.editorOutputFormat) {
-                        Text(localizedAppText("Automatic", de: "Automatisch")).tag("")
+                Section(String(localized: "Behavior")) {
+                    TextField(String(localized: "Language code (blank inherits global)"), text: $viewModel.editorInputLanguage)
+                    Picker(String(localized: "Output format"), selection: $viewModel.editorOutputFormat) {
+                        Text(String(localized: "Automatic")).tag("")
                         Text("Plain Text").tag("plainText")
                         Text("Markdown").tag("markdown")
                     }
-                    Toggle(localizedAppText("Press Return after insertion", de: "Nach dem Einfügen Return drücken"), isOn: $viewModel.editorAutoEnterEnabled)
+                    Toggle(String(localized: "Press Return after insertion"), isOn: $viewModel.editorAutoEnterEnabled)
                     HotkeyRecorderView(
                         label: viewModel.editorHotkey.map(HotkeyService.displayName(for:)) ?? String(localized: "Not Set"),
                         onRecord: { viewModel.editorHotkey = $0 },
@@ -120,6 +114,6 @@ struct ProfilesSettingsView: View {
 
     private func scopeSummary(_ profile: Profile) -> String {
         let scope = (profile.bundleIdentifiers + profile.urlPatterns).joined(separator: ", ")
-        return scope.isEmpty ? localizedAppText("Global fallback", de: "Globaler Fallback") : scope
+        return scope.isEmpty ? String(localized: "Global fallback") : scope
     }
 }
