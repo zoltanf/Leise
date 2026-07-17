@@ -156,3 +156,21 @@ Biggest test hole: `DictationViewModel` (1,954 LOC) has essentially no tests of 
 4. Consolidate the three indicator panels.
 5. Move `SetupWizardRecommendationAvailability` + model-selection resolvers into `LeiseComponents`; remove `ServiceContainer.shared` call-site escapes.
 6. Add `DictationViewModel` state-machine tests — highest-value test investment; safety net for Phase 2 items 1–2.
+
+---
+
+## Status (2026-07-17)
+
+All findings in this report are resolved. Phases 0–3 shipped in commits
+`b85225c..dd888c7`; an independent post-implementation review's findings
+were addressed in `9d24643`; the remaining minor/nitpick tail, full
+German+Japanese catalog coverage, and the documented conventions
+(AGENTS.md) shipped as Phase 4 in `75d5df0..5bc609e`. Every commit was
+verified by both test suites locally and by CI.
+
+Deliberate decisions that stand: `.focusedTextStateUnavailable` paste
+verification is treated as ambiguous-success (recovery audio is now
+preserved for it, and the recovery store is capped at 20); the menu-bar
+opener wiring remains a documented body side effect; language option
+names stay translated in code because catalog resolution is fixed per
+process.
