@@ -483,7 +483,9 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
     private var streamOutput: SystemAudioStreamOutput?
     private let sysFileLock = OSAllocatedUnfairLock<AVAudioFile?>(initialState: nil)
     private var durationTimer: Timer?
-    private var startTime: Date?
+    // Written from the async start/stop paths (arbitrary executors) and read
+    // by the main-run-loop duration timer, so it must be lock-protected.
+    private let startTimeLock = OSAllocatedUnfairLock<Date?>(initialState: nil)
     private let systemAudioDiagnosticsLock = OSAllocatedUnfairLock(initialState: SystemAudioCaptureDiagnostics())
 
     private var micTempURL: URL?
@@ -538,20 +540,22 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
         let micEnabled = self.micEnabled
         let systemAudioEnabled = self.systemAudioEnabled
         let micDuckingMode = self.micDuckingMode
-        return transcriptionBufferLock.withLock { buffer in
-            buffer.currentBuffer(
-                micEnabled: micEnabled,
-                systemAudioEnabled: systemAudioEnabled,
-                mixer: { range, micSamples, systemSamples in
-                    Self.mixTranscriptionBuffer(
-                        in: range,
-                        micSamples: micSamples,
-                        systemSamples: systemSamples,
-                        micDuckingMode: micDuckingMode
-                    )
-                }
-            )
-        }
+        // Snapshot the value-type buffer under the lock (cheap CoW copy) and
+        // run the O(n) mix outside it, so the capture threads appending audio
+        // are never stalled behind a transcription poll.
+        let snapshot = transcriptionBufferLock.withLock { $0 }
+        return snapshot.currentBuffer(
+            micEnabled: micEnabled,
+            systemAudioEnabled: systemAudioEnabled,
+            mixer: { range, micSamples, systemSamples in
+                Self.mixTranscriptionBuffer(
+                    in: range,
+                    micSamples: micSamples,
+                    systemSamples: systemSamples,
+                    micDuckingMode: micDuckingMode
+                )
+            }
+        )
     }
 
     /// Returns at most the last `maxDuration` seconds of 16kHz audio.
@@ -565,21 +569,20 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
         let systemAudioEnabled = self.systemAudioEnabled
         let micDuckingMode = self.micDuckingMode
         let maxSampleCount = Int(maxDuration * Self.transcriptionSampleRate)
-        return transcriptionBufferLock.withLock { buffer in
-            buffer.recentBuffer(
-                maxSampleCount: maxSampleCount,
-                micEnabled: micEnabled,
-                systemAudioEnabled: systemAudioEnabled,
-                mixer: { range, micSamples, systemSamples in
-                    Self.mixTranscriptionBuffer(
-                        in: range,
-                        micSamples: micSamples,
-                        systemSamples: systemSamples,
-                        micDuckingMode: micDuckingMode
-                    )
-                }
-            )
-        }
+        let snapshot = transcriptionBufferLock.withLock { $0 }
+        return snapshot.recentBuffer(
+            maxSampleCount: maxSampleCount,
+            micEnabled: micEnabled,
+            systemAudioEnabled: systemAudioEnabled,
+            mixer: { range, micSamples, systemSamples in
+                Self.mixTranscriptionBuffer(
+                    in: range,
+                    micSamples: micSamples,
+                    systemSamples: systemSamples,
+                    micDuckingMode: micDuckingMode
+                )
+            }
+        )
     }
 
     /// Returns audio appended since `sampleOffset` and the updated absolute offset.
@@ -592,21 +595,20 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
         let micEnabled = self.micEnabled
         let systemAudioEnabled = self.systemAudioEnabled
         let micDuckingMode = self.micDuckingMode
-        return transcriptionBufferLock.withLock { buffer in
-            buffer.delta(
-                since: sampleOffset,
-                micEnabled: micEnabled,
-                systemAudioEnabled: systemAudioEnabled,
-                mixer: { range, micSamples, systemSamples in
-                    Self.mixTranscriptionBuffer(
-                        in: range,
-                        micSamples: micSamples,
-                        systemSamples: systemSamples,
-                        micDuckingMode: micDuckingMode
-                    )
-                }
-            )
-        }
+        let snapshot = transcriptionBufferLock.withLock { $0 }
+        return snapshot.delta(
+            since: sampleOffset,
+            micEnabled: micEnabled,
+            systemAudioEnabled: systemAudioEnabled,
+            mixer: { range, micSamples, systemSamples in
+                Self.mixTranscriptionBuffer(
+                    in: range,
+                    micSamples: micSamples,
+                    systemSamples: systemSamples,
+                    micDuckingMode: micDuckingMode
+                )
+            }
+        )
     }
 
     /// Total duration of transcription buffer in seconds.
@@ -691,9 +693,9 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
         }
 
         // Start duration timer
-        startTime = Date()
+        startTimeLock.withLock { $0 = Date() }
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-            guard let self, let startTime = self.startTime else { return }
+            guard let self, let startTime = self.startTimeLock.withLock({ $0 }) else { return }
             let elapsed = Date().timeIntervalSince(startTime)
             DispatchQueue.main.async {
                 self.duration = elapsed
@@ -730,7 +732,7 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
             micTempURL = nil
             systemTempURL = nil
             finalOutputURL = nil
-            startTime = nil
+            startTimeLock.withLock { $0 = nil }
 
             DispatchQueue.main.async {
                 self.isRecording = false
@@ -796,7 +798,7 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
         micTempURL = nil
         systemTempURL = nil
         finalOutputURL = nil
-        startTime = nil
+        startTimeLock.withLock { $0 = nil }
 
         DispatchQueue.main.async {
             self.isRecording = false
@@ -1661,7 +1663,7 @@ final class AudioRecorderService: ObservableObject, @unchecked Sendable {
     private func rollbackFailedStart() async {
         durationTimer?.invalidate()
         durationTimer = nil
-        startTime = nil
+        startTimeLock.withLock { $0 = nil }
         endSystemAudioMonitoring()
 
         if let stream = scStream {

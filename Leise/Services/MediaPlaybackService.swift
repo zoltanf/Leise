@@ -7,7 +7,7 @@ import os.log
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Leise", category: "MediaPlaybackService")
 
 #if !APPSTORE
-struct MediaPlaybackSnapshot: Equatable {
+struct MediaPlaybackSnapshot: Equatable, Sendable {
     let isApplicationPlaying: Bool?
     let playbackRate: Double?
     let bundleIdentifier: String?
@@ -66,28 +66,34 @@ struct MediaPlaybackSnapshot: Equatable {
 }
 
 protocol MediaPlaybackControlling: AnyObject {
-    func getPlaybackSnapshot(_ onReceive: @escaping (_ snapshot: MediaPlaybackSnapshot?) -> Void)
+    /// The snapshot is always delivered on the main actor, so
+    /// MediaPlaybackService's main-actor state stays isolated regardless of
+    /// the adapter's (undocumented) callback thread.
+    func getPlaybackSnapshot(_ onReceive: @escaping @MainActor (_ snapshot: MediaPlaybackSnapshot?) -> Void)
     func play()
     func pause()
     func togglePlayPause()
 }
 
 extension MediaController: MediaPlaybackControlling {
-    func getPlaybackSnapshot(_ onReceive: @escaping (_ snapshot: MediaPlaybackSnapshot?) -> Void) {
+    func getPlaybackSnapshot(_ onReceive: @escaping @MainActor (_ snapshot: MediaPlaybackSnapshot?) -> Void) {
         getTrackInfo { trackInfo in
-            guard let payload = trackInfo?.payload else {
-                onReceive(nil)
-                return
+            let snapshot: MediaPlaybackSnapshot?
+            if let payload = trackInfo?.payload {
+                snapshot = MediaPlaybackSnapshot(
+                    isApplicationPlaying: payload.isPlaying,
+                    playbackRate: payload.playbackRate,
+                    bundleIdentifier: payload.bundleIdentifier,
+                    title: payload.title,
+                    artist: payload.artist,
+                    album: payload.album
+                )
+            } else {
+                snapshot = nil
             }
-
-            onReceive(MediaPlaybackSnapshot(
-                isApplicationPlaying: payload.isPlaying,
-                playbackRate: payload.playbackRate,
-                bundleIdentifier: payload.bundleIdentifier,
-                title: payload.title,
-                artist: payload.artist,
-                album: payload.album
-            ))
+            Task { @MainActor in
+                onReceive(snapshot)
+            }
         }
     }
 }

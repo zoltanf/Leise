@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 PerformanceMilestones.processStarted()
 
@@ -11,6 +12,20 @@ PerformanceBaselineRunner.prepareDefaultsIfRequested()
 // calls resolve using the user's preferred language, not the system language.
 
 private class OverrideBundle: Bundle, @unchecked Sendable {
+    // The .lproj sub-bundles never change during a run; resolving them once
+    // avoids a filesystem path lookup on every localized-string access.
+    private static let bundleCache = OSAllocatedUnfairLock(initialState: [String: Bundle?]())
+
+    private static func bundle(forLanguage candidate: String) -> Bundle? {
+        if let cached = bundleCache.withLock({ $0[candidate] }) {
+            return cached
+        }
+        let resolved = Bundle.main.path(forResource: candidate, ofType: "lproj")
+            .flatMap { Bundle(path: $0) }
+        bundleCache.withLock { $0[candidate] = resolved }
+        return resolved
+    }
+
     override func localizedString(forKey key: String, value: String?, table tableName: String?) -> String {
         guard let lang = UserDefaults.standard.string(forKey: UserDefaultsKeys.preferredAppLanguage) else {
             return super.localizedString(forKey: key, value: value, table: tableName)
@@ -20,8 +35,7 @@ private class OverrideBundle: Bundle, @unchecked Sendable {
         // (English is the source language and may live in Base.lproj or directly in Resources)
         let candidates = [lang, "Base"]
         for candidate in candidates {
-            if let path = Bundle.main.path(forResource: candidate, ofType: "lproj"),
-               let bundle = Bundle(path: path) {
+            if let bundle = Self.bundle(forLanguage: candidate) {
                 let result = bundle.localizedString(forKey: key, value: value, table: tableName)
                 // If the bundle returned the key itself, the string wasn't found — try next
                 if result != key { return result }

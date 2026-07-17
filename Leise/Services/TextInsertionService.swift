@@ -100,9 +100,7 @@ final class TextInsertionService {
     }
 
     func resolveBrowserURL(bundleId: String) async -> String? {
-        await Task.detached(priority: .utility) {
-            Self.getBrowserURL(bundleId: bundleId)
-        }.value
+        await Self.getBrowserURL(bundleId: bundleId)
     }
 
     // MARK: - Browser URL Detection
@@ -137,7 +135,7 @@ final class TextInsertionService {
         }
     }
 
-    nonisolated private static func getBrowserURL(bundleId: String) -> String? {
+    nonisolated private static func getBrowserURL(bundleId: String) async -> String? {
         let browserType = identifyBrowser(bundleId)
         guard browserType != .notABrowser else { return nil }
 
@@ -174,33 +172,45 @@ final class TextInsertionService {
             return nil
         }
 
-        return executeAppleScript(script, timeout: 2.5)
+        return await executeAppleScript(script, timeout: 2.5)
     }
 
-    nonisolated private static func executeAppleScript(_ source: String, timeout: TimeInterval, validateURL: Bool = true) -> String? {
-        let resultState = OSAllocatedUnfairLock(initialState: Optional<String>.none)
-        let semaphore = DispatchSemaphore(value: 0)
+    /// Runs the script on a global queue and suspends instead of blocking a
+    /// cooperative-pool thread on a semaphore; the continuation is resumed by
+    /// whichever of completion or timeout comes first.
+    nonisolated private static func executeAppleScript(_ source: String, timeout: TimeInterval, validateURL: Bool = true) async -> String? {
+        let result: String? = await withCheckedContinuation { continuation in
+            let hasResumed = OSAllocatedUnfairLock(initialState: false)
+            let resumeOnce: (String?) -> Bool = { value in
+                let shouldResume = hasResumed.withLock { resumed -> Bool in
+                    guard !resumed else { return false }
+                    resumed = true
+                    return true
+                }
+                if shouldResume {
+                    continuation.resume(returning: value)
+                }
+                return shouldResume
+            }
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            var error: NSDictionary?
-            let script = NSAppleScript(source: source)
-            let descriptor = script?.executeAndReturnError(&error)
-            if let errorDict = error {
-                logger.warning("NSAppleScript error: \(errorDict)")
+            DispatchQueue.global(qos: .userInitiated).async {
+                var error: NSDictionary?
+                let script = NSAppleScript(source: source)
+                let descriptor = script?.executeAndReturnError(&error)
+                if let errorDict = error {
+                    logger.warning("NSAppleScript error: \(errorDict)")
+                }
+                _ = resumeOnce(descriptor?.stringValue)
             }
-            if let stringValue = descriptor?.stringValue {
-                resultState.withLock { $0 = stringValue }
+
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) {
+                if resumeOnce(nil) {
+                    logger.warning("NSAppleScript timed out after \(timeout)s")
+                }
             }
-            semaphore.signal()
         }
 
-        let waitResult = semaphore.wait(timeout: .now() + timeout)
-        if waitResult == .timedOut {
-            logger.warning("NSAppleScript timed out after \(timeout)s")
-            return nil
-        }
-
-        guard let result = resultState.withLock({ $0 }), !result.isEmpty else { return nil }
+        guard let result, !result.isEmpty else { return nil }
         if validateURL {
             guard isValidURL(result) else { return nil }
         }

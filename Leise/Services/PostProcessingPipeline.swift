@@ -58,7 +58,9 @@ final class PostProcessingPipeline {
             steps.append((processor.priority, index))
         }
         steps.append((600, -3))
-        steps.sort { $0.priority < $1.priority }
+        // Swift's sort is not stable; tie-break on id so processors with
+        // equal priorities run in a deterministic order.
+        steps.sort { ($0.priority, $0.id) < ($1.priority, $1.id) }
 
         var result = text
         var appliedSteps: [String] = []

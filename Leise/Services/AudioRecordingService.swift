@@ -215,9 +215,19 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
         audioLevelClockOverride?() ?? DispatchTime.now().uptimeNanoseconds
     }
 
+    /// Lock-protected mirror of `isRecording` for reads from the recovery
+    /// queue and other non-main contexts (the @Published var itself must only
+    /// be touched on the main thread).
+    private let isRecordingFlag = OSAllocatedUnfairLock(initialState: false)
+
+    var isRecordingNow: Bool {
+        isRecordingFlag.withLock { $0 }
+    }
+
     /// @Published must be mutated on the main thread; the start sequence may
     /// run on the detached engine-start queue.
     private func publishIsRecording(_ value: Bool) {
+        isRecordingFlag.withLock { $0 = value }
         if Thread.isMainThread {
             isRecording = value
         } else {
@@ -513,7 +523,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
             setLastStopGraceCaptureApplied(false)
             resetAudioLevelPublishing()
             DispatchQueue.main.async { [weak self] in
-                self?.isRecording = false
+                self?.publishIsRecording(false)
                 self?.audioLevel = normalizedLevel
                 self?.rawAudioLevel = rms
             }
@@ -556,7 +566,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
 
             resetAudioLevelPublishing()
             DispatchQueue.main.async { [weak self] in
-                self?.isRecording = false
+                self?.publishIsRecording(false)
                 self?.audioLevel = 0
                 self?.rawAudioLevel = 0
             }
@@ -602,7 +612,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
 
         resetAudioLevelPublishing()
         DispatchQueue.main.async { [weak self] in
-            self?.isRecording = false
+            self?.publishIsRecording(false)
             self?.audioLevel = 0
             self?.rawAudioLevel = 0
         }
@@ -636,7 +646,9 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
         }
 
         let engine: AVAudioEngine? = engineLock.withLock { audioEngine }
-        guard isRecording, let engine else { return }
+        // This runs on the recovery queue; read the lock-protected mirror
+        // rather than the main-thread-only @Published value.
+        guard isRecordingNow, let engine else { return }
 
         if consumeStartupConfigurationChangeGuardIfNeeded(for: engine) {
             logger.info("Ignoring benign post-start audio engine configuration change after tap renegotiation")
@@ -691,7 +703,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.recoveryError = error
-            self.isRecording = false
+            self.publishIsRecording(false)
             self.audioLevel = 0
             self.rawAudioLevel = 0
             self.recoverableRecordingURLs = recoveryURLs
@@ -990,7 +1002,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
         inputActivationGuard.restore(reason: "recording-start-failed")
         resetAudioLevelPublishing()
         DispatchQueue.main.async { [weak self] in
-            self?.isRecording = false
+            self?.publishIsRecording(false)
             self?.audioLevel = 0
             self?.rawAudioLevel = 0
         }
@@ -1134,12 +1146,19 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
                 label: label,
                 bufferSize: Self.captureTapFrames
             ) { [weak self] buffer in
-                guard let self,
-                      let monoBuffer = AudioInputBufferNormalizer.monoFloatBuffer(from: buffer) else {
-                    return
+                guard let self else { return }
+                // Keep the HAL render thread free of normalization, conversion,
+                // and lock work: the serial queue preserves sample order and
+                // serializes converter access. The buffer is freshly allocated
+                // per render tick, so handing it off is safe.
+                self.processingQueue.async { [weak self] in
+                    guard let self,
+                          let monoBuffer = AudioInputBufferNormalizer.monoFloatBuffer(from: buffer) else {
+                        return
+                    }
+                    self.markInitialInputTapSeenIfNeeded(monoBuffer)
+                    self.processAudioBuffer(monoBuffer, converter: converter, targetFormat: targetFormat)
                 }
-                self.markInitialInputTapSeenIfNeeded(monoBuffer)
-                self.processAudioBuffer(monoBuffer, converter: converter, targetFormat: targetFormat)
             }
 
             recoveryCoordinator.transitionToIdle()
@@ -1174,7 +1193,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
         inputActivationGuard.restore(reason: "recording-start-failed")
         resetAudioLevelPublishing()
         DispatchQueue.main.async { [weak self] in
-            self?.isRecording = false
+            self?.publishIsRecording(false)
             self?.audioLevel = 0
             self?.rawAudioLevel = 0
         }

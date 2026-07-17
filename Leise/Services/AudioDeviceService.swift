@@ -730,9 +730,20 @@ final class AudioDeviceService: ObservableObject, @unchecked Sendable {
         }
         outputVolumeGuard.clear()
         inputActivationGuard.restore(reason: "preview-stop")
-        isPreviewActive = false
-        previewAudioLevel = 0
-        previewRawLevel = 0
+        // stopPreview is also called from deinit, which may run off-main;
+        // @Published must only be mutated on the main thread. (During deinit
+        // the weak capture is already nil and the publish is moot.)
+        if Thread.isMainThread {
+            isPreviewActive = false
+            previewAudioLevel = 0
+            previewRawLevel = 0
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.isPreviewActive = false
+                self?.previewAudioLevel = 0
+                self?.previewRawLevel = 0
+            }
+        }
     }
 
     func displayName(for device: AudioInputDevice) -> String {
@@ -2984,25 +2995,26 @@ final class AudioInputDeviceActivationGuard: AudioInputDeviceActivating, @unchec
 
     @discardableResult
     func activate(deviceID: AudioDeviceID, reason: String) -> Bool {
+        // Hold the lock across check-and-store: two concurrent activations
+        // must not both pass the nil check and overwrite each other's
+        // previousDeviceID. The CoreAudio calls inside are quick property
+        // reads/writes; holding the lock across them is acceptable.
         lock.lock()
+        defer { lock.unlock() }
+
         if var currentActivation = activation {
             guard currentActivation.deviceID == deviceID else {
-                lock.unlock()
                 deviceHelperLogger.warning("Cannot activate input device \(deviceID) for \(reason, privacy: .public); \(currentActivation.deviceID) is already active")
                 return false
             }
             currentActivation.retainCount += 1
             activation = currentActivation
-            lock.unlock()
             return true
         }
-        lock.unlock()
 
         let previousDeviceID = controller.defaultInputDeviceID()
         guard previousDeviceID != deviceID else {
-            lock.withLock {
-                activation = Activation(deviceID: deviceID, previousDeviceID: nil, retainCount: 1)
-            }
+            activation = Activation(deviceID: deviceID, previousDeviceID: nil, retainCount: 1)
             deviceHelperLogger.info("Default input already matches Bluetooth input \(deviceID) for \(reason, privacy: .public)")
             return true
         }
@@ -3011,9 +3023,7 @@ final class AudioInputDeviceActivationGuard: AudioInputDeviceActivating, @unchec
             return false
         }
 
-        lock.withLock {
-            activation = Activation(deviceID: deviceID, previousDeviceID: previousDeviceID, retainCount: 1)
-        }
+        activation = Activation(deviceID: deviceID, previousDeviceID: previousDeviceID, retainCount: 1)
         deviceHelperLogger.info("Temporarily activated input device \(deviceID) for \(reason, privacy: .public)")
         return true
     }
