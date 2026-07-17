@@ -132,4 +132,16 @@ final class FillerWordCleanupTests: XCTestCase {
         XCTAssertEqual(FillerWordCleanup.removeFillerWords(from: "hello  world"), "hello  world")
         XCTAssertEqual(FillerWordCleanup.removeFillerWords(from: "\n\num hello"), "\n\nhello")
     }
+
+    func testPreservesSentenceBoundariesAroundRemovedFillers() {
+        // A sentence boundary after the filler must survive removal.
+        XCTAssertEqual(FillerWordCleanup.removeFillerWords(from: "well, um. Yes"), "well. Yes")
+        // A filler that forms its own sentence disappears with its punctuation.
+        XCTAssertEqual(FillerWordCleanup.removeFillerWords(from: "Well. Um. So it goes"), "Well. So it goes")
+        XCTAssertEqual(FillerWordCleanup.removeFillerWords(from: "Um. Hello"), "Hello")
+        // The filler's own trailing comma is consumed; the clause comma stays.
+        XCTAssertEqual(FillerWordCleanup.removeFillerWords(from: "I think, um, that works"), "I think, that works")
+        // A spurious period before a lowercase continuation is an ASR artifact.
+        XCTAssertEqual(FillerWordCleanup.removeFillerWords(from: "so um. we can"), "so we can")
+    }
 }

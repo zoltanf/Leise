@@ -34,7 +34,10 @@ let package = Package(
         ),
         .target(
             name: "FillerWordCleanup",
-            dependencies: ["LeiseCore"]
+            dependencies: ["LeiseCore"],
+            resources: [
+                .process("Localizable.xcstrings"),
+            ]
         ),
         .executableTarget(
             name: "OfflineModelPrep",

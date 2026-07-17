@@ -57,13 +57,26 @@ final class FillerWordCleanup: TextPostProcessor, @unchecked Sendable {
     }
 
     private static func removeLatinFillerWords(from text: String, words: [String]) -> String {
-        let latinWords = words.filter { !$0.containsJapaneseScript }
+        let latinWords = words.filter { !$0.containsCJKScript }
         guard !latinWords.isEmpty else { return text }
 
         let escapedWords = latinWords
             .map(NSRegularExpression.escapedPattern(for:))
             .joined(separator: "|")
-        let pattern = #"(?i)(?<![\p{L}\p{N}_])[,.!?]?[ \t]*(?:"# + escapedWords + #")(?![\p{L}\p{N}_])[ \t]*[,.!?]?"#
+        // Case-insensitivity is scoped to the words themselves: the \p{Ll}
+        // lookahead below must distinguish upper from lower case.
+        let wordGroup = #"(?i:"# + escapedWords + #")(?![\p{L}\p{N}_])"#
+        // Two shapes, tried in order:
+        // 1. The filler is its own sentence ("Well. Um. So" / "Um. Hello"):
+        //    remove it together with its sentence punctuation.
+        // 2. Mid-sentence filler: consume an adjacent comma freely, but only
+        //    consume sentence-ending punctuation when a lowercase letter
+        //    follows (an ASR artifact) — a real sentence boundary before an
+        //    uppercase continuation must survive so sentences don't merge.
+        let ownSentence = #"(?:^|(?<=[.!?]))[ \t]*"# + wordGroup + #"[ \t]*[.!?]+[ \t]*"#
+        let commaBeforeSentenceEnd = #",[ \t]*"# + wordGroup + #"(?=[ \t]*[.!?])"#
+        let midSentence = #"(?<![\p{L}\p{N}_]),?[ \t]*"# + wordGroup + #"[ \t]*(?:,[ \t]*|[.!?](?=[ \t]*\p{Ll})[ \t]*)?"#
+        let pattern = "(?:" + ownSentence + "|" + commaBeforeSentenceEnd + "|" + midSentence + ")"
 
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return text
@@ -77,7 +90,7 @@ final class FillerWordCleanup: TextPostProcessor, @unchecked Sendable {
     }
 
     private static func removeJapaneseFillerWords(from text: String, words: [String]) -> String {
-        let japaneseWords = words.filter(\.containsJapaneseScript)
+        let japaneseWords = words.filter(\.containsCJKScript)
         guard !japaneseWords.isEmpty else { return text }
 
         let escapedWords = japaneseWords
@@ -144,7 +157,10 @@ final class FillerWordCleanup: TextPostProcessor, @unchecked Sendable {
         var normalized: [String] = []
 
         for word in words {
-            let cleaned = word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            // POSIX locale: user terms must not be subject to locale-specific
+            // case mapping (e.g. the Turkish dotless-I rule).
+            let cleaned = word.trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased(with: Locale(identifier: "en_US_POSIX"))
             guard !cleaned.isEmpty, seen.insert(cleaned).inserted else { continue }
             normalized.append(cleaned)
         }
@@ -159,6 +175,14 @@ final class FillerWordCleanup: TextPostProcessor, @unchecked Sendable {
             options: .regularExpression
         )
 
+        // A removed filler can leave a space stranded before punctuation
+        // ("well . Yes"); reattach the punctuation to the preceding word.
+        result = result.replacingOccurrences(
+            of: #"(?<=\S) +(?=[,.!?;:])"#,
+            with: "",
+            options: .regularExpression
+        )
+
         result = result.replacingOccurrences(
             of: #"(?m)^ +"#,
             with: "",
@@ -170,11 +194,14 @@ final class FillerWordCleanup: TextPostProcessor, @unchecked Sendable {
             options: .regularExpression
         )
 
-        if original.first?.isWhitespace == true, result.first == " " {
-            return result
-        }
-
-        return result.trimmingCharacters(in: .whitespaces)
+        // Preserve the original's leading whitespace run (including newlines,
+        // e.g. a transcript line that begins with a filler) around the
+        // trimmed content.
+        let originalPrefix = original.prefix(while: \.isWhitespace)
+        let core = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !originalPrefix.isEmpty else { return core }
+        guard !core.isEmpty else { return "" }
+        return String(originalPrefix) + core
     }
 }
 
@@ -262,7 +289,10 @@ private final class FillerWordsSettingsStore: ObservableObject, @unchecked Senda
 }
 
 private extension String {
-    var containsJapaneseScript: Bool {
+    /// Kana or CJK ideographs. Terms containing these are matched with the
+    /// boundary-based (spaceless-script) strategy, which is appropriate for
+    /// Japanese and Chinese alike — Latin word boundaries don't exist there.
+    var containsCJKScript: Bool {
         unicodeScalars.contains { scalar in
             switch scalar.value {
             case 0x3040...0x309F, 0x30A0...0x30FF, 0x31F0...0x31FF, 0x3400...0x4DBF, 0x4E00...0x9FFF:
@@ -279,10 +309,10 @@ private struct FillerWordsSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Filler words")
+            Text(String(localized: "Filler words", bundle: .module))
                 .font(.headline)
 
-            Text("One word per line. Commas and semicolons are also accepted.")
+            Text(String(localized: "One word per line. Commas and semicolons are also accepted.", bundle: .module))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -295,13 +325,13 @@ private struct FillerWordsSettingsView: View {
                 )
 
             HStack {
-                Text("\(store.wordCount) words")
+                Text(String(localized: "\(store.wordCount) words", bundle: .module))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 Spacer()
 
-                Button("Reset Defaults") {
+                Button(String(localized: "Reset Defaults", bundle: .module)) {
                     store.resetToDefaults()
                 }
             }

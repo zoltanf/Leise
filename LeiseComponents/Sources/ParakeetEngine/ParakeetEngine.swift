@@ -615,11 +615,16 @@ final class ParakeetEngineImplementation: TranscriptionEngine {
 
             let startedAt = ContinuousClock.now
             do {
-                let spotResult = try await spotter.spotKeywordsWithLogProbs(
-                    audioSamples: Array(request.audio.samples[range]),
-                    customVocabulary: inferenceVocabulary,
-                    minScore: nil
-                )
+                // CTC inference goes through the same gate as transcription so
+                // the spotter is never invoked concurrently with a decode;
+                // preview priority yields to a pending final transcription.
+                let spotResult = try await transcriptionGate.withLock(priority: .preview) {
+                    try await spotter.spotKeywordsWithLogProbs(
+                        audioSamples: Array(request.audio.samples[range]),
+                        customVocabulary: inferenceVocabulary,
+                        minScore: nil
+                    )
+                }
                 guard vocabularyPrecomputationSession?.id == request.sessionID,
                       vocabularyPrecomputationSession?.vocabularySignature == vocabularySignature,
                       vocabularyPrecomputationSession?.modelID == modelID else {
@@ -1223,6 +1228,11 @@ final class ParakeetEngineImplementation: TranscriptionEngine {
         // The offline edition must never fall back to Hugging Face if a packaged
         // Core ML bundle is damaged. Point FluidAudio's model registry at the
         // local, read-only bundle before invoking any of its loaders.
+        //
+        // This mutates FluidAudio's process-wide registry and is deliberately
+        // never restored: it only runs for offline distributions, where every
+        // model load resolves through explicit local directories and no other
+        // FluidAudio consumer exists in the process.
         ModelRegistry.baseURL = bundledDirectory.absoluteString
     }
 

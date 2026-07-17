@@ -129,6 +129,11 @@ public struct TranscriptionCapabilities: Equatable, Sendable {
 }
 
 public struct TranscriptionRequest: Sendable {
+    /// Returning `false` stops further progress DELIVERY only — it does not
+    /// cancel the underlying transcription. To interrupt in-flight work,
+    /// cancel the surrounding Task: engines check `Task.isCancelled` at their
+    /// expensive boundaries. `isCancelled` is consulted before work begins;
+    /// a custom non-Task-based check cannot interrupt a running decode.
     public typealias TextProgress = @Sendable (String) -> Bool
     public typealias SourceProgress = @Sendable (TranscriptionSourceProgress) -> Bool
     public typealias CancellationCheck = @Sendable () -> Bool
