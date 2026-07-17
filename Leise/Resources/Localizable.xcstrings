@@ -4083,7 +4083,22 @@
         }
       }
     },
-    "Couldn't insert text — kept on clipboard" : {},
+    "Couldn't insert text — kept on clipboard" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text konnte nicht eingefügt werden — in der Zwischenablage behalten"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストを挿入できませんでした — クリップボードに保持しました"
+          }
+        }
+      }
+    },
     "Create First Rule" : {
       "extractionState" : "stale",
       "localizations" : {

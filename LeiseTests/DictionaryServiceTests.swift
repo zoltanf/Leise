@@ -957,13 +957,17 @@ final class TermPackRegistryServiceTests: XCTestCase {
 
         service.checkForUpdatesInBackground()
 
-        for _ in 0..<20 {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
             if case .error = service.fetchState {
                 break
             }
-            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(10))
         }
 
+        guard case .error = service.fetchState else {
+            return XCTFail("the background check must have attempted (and failed) a fetch, got \(service.fetchState)")
+        }
         XCTAssertEqual(defaults.double(forKey: UserDefaultsKeys.termPackRegistryLastUpdateCheck), 0)
     }
 

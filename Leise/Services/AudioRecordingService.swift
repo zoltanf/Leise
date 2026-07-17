@@ -215,6 +215,18 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
         audioLevelClockOverride?() ?? DispatchTime.now().uptimeNanoseconds
     }
 
+    /// @Published must be mutated on the main thread; the start sequence may
+    /// run on the detached engine-start queue.
+    private func publishIsRecording(_ value: Bool) {
+        if Thread.isMainThread {
+            isRecording = value
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.isRecording = value
+            }
+        }
+    }
+
     static let targetSampleRate: Double = 16000
     private let engineStartQueue = DispatchQueue(label: "com.leise.audio-engine-start", qos: .userInteractive)
     private static let captureTapFrames: AVAudioFrameCount = 256
@@ -418,7 +430,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
                 try startRecordingOverride()
                 outputVolumeGuard.restoreIfRaised(reason: "recording-start-override")
                 outputVolumeGuard.clear()
-                isRecording = true
+                publishIsRecording(true)
             } catch {
                 outputVolumeGuard.restoreIfRaised(reason: "recording-start-override-failed")
                 outputVolumeGuard.clear()
@@ -434,7 +446,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
                 try startInputOnlyRecording(deviceID: inputOnlyDeviceID, label: "recording")
                 outputVolumeGuard.restoreIfRaised(reason: "recording-start")
                 outputVolumeGuard.clear()
-                isRecording = true
+                publishIsRecording(true)
             } catch {
                 cleanupAfterFailedInputOnlyStart()
                 discardActiveRecoveryRecording(keepingLatest: true)
@@ -470,7 +482,7 @@ final class AudioRecordingService: ObservableObject, @unchecked Sendable {
 
             outputVolumeGuard.restoreIfRaised(reason: "recording-start")
             outputVolumeGuard.clear()
-            isRecording = true
+            publishIsRecording(true)
         } catch {
             let failedEngine = engineLock.withLock { audioEngine } ?? engine
             cleanupAfterFailedStart(failedEngine)

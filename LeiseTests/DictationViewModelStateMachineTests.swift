@@ -217,6 +217,24 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         XCTAssertEqual(harness.viewModel.state, .recording)
         harness.viewModel.handleCancelHotkey()
 
+        await waitUntil { harness.stopCallCount.withLock { $0 } > 0 }
+        XCTAssertEqual(harness.stopCallCount.withLock { $0 }, 1, "cancel must actually stop the engine")
+        await waitUntil { harness.viewModel.state != .recording }
+        XCTAssertNotEqual(harness.viewModel.state, .recording)
+    }
+
+    @MainActor
+    func testCancelDuringInFlightStartAbortsWithoutRecording() async throws {
+        let harness = try makeHarness(startDelay: 0.15)
+
+        harness.fireStartHotkey()
+        // The engine is still starting; a single Esc must cancel (no warning:
+        // nothing has been recorded yet) and stop the engine once it is up.
+        harness.viewModel.handleCancelHotkey()
+
+        await waitUntil { harness.stopCallCount.withLock { $0 } > 0 }
+        XCTAssertEqual(harness.startCallCount.withLock { $0 }, 1)
+        XCTAssertEqual(harness.stopCallCount.withLock { $0 }, 1)
         await waitUntil { harness.viewModel.state != .recording }
         XCTAssertNotEqual(harness.viewModel.state, .recording)
     }

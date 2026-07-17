@@ -214,6 +214,12 @@ final class IndicatorCoordinator {
             DispatchQueue.main.async {
                 self?.syncGlobalMouseMonitor()
             }
+            // The notch panel animates its dismissal (~220ms) and stays
+            // visible meanwhile; re-check once the animation has settled so
+            // the monitor doesn't stay installed through idle.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self?.syncGlobalMouseMonitor()
+            }
         }
         .store(in: &cancellables)
     }

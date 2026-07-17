@@ -1697,6 +1697,9 @@ final class AudioRecordingServiceSelectedDeviceTests: XCTestCase {
 
         try service.startRecording()
 
+        // isRecording publishes on the main thread; this async test runs off
+        // it, so drain the main queue before asserting.
+        await MainActor.run {}
         XCTAssertTrue(service.isRecording)
         XCTAssertEqual(inputCaptureFactory.startCalls, [
             .init(deviceID: usbDeviceID, label: "recording", bufferSize: 256)
@@ -1723,6 +1726,9 @@ final class AudioRecordingServiceSelectedDeviceTests: XCTestCase {
 
         try service.startRecording()
 
+        // isRecording publishes on the main thread; this async test runs off
+        // it, so drain the main queue before asserting.
+        await MainActor.run {}
         XCTAssertTrue(service.isRecording)
         XCTAssertEqual(inputCaptureFactory.startCalls, [
             .init(deviceID: virtualDeviceID, label: "recording", bufferSize: 256)

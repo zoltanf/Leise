@@ -194,6 +194,7 @@ final class DictationViewModel: ObservableObject {
     private var isStopInFlight = false
     private var isStartInFlight = false
     private var pendingStopRequestedDuringStart = false
+    private var pendingCancelRequestedDuringStart = false
     private var activeDictationSessionID: UUID?
     private var pendingPushToTalkDiscardMessage: String?
     private var recordingStartCuePending = false
@@ -653,6 +654,13 @@ final class DictationViewModel: ObservableObject {
     }
 
     func handleCancelHotkey() {
+        // While the engine start is in flight the state is still .idle, so the
+        // warning flow below would ignore the press entirely. Nothing has been
+        // recorded yet, so cancel immediately without the two-press warning.
+        if isStartInFlight {
+            cancelCurrentOperation()
+            return
+        }
         guard let target = cancelWarningTargetForCurrentState() else { return }
 
         if cancelWarningTarget == target {
@@ -689,6 +697,13 @@ final class DictationViewModel: ObservableObject {
     private func cancelCurrentOperation() {
         let cancelledMessage = String(localized: "Cancelled")
         clearCancelWarning()
+
+        if isStartInFlight {
+            pendingCancelRequestedDuringStart = true
+            pendingStopRequestedDuringStart = false
+            showNotchFeedback(message: cancelledMessage, icon: "xmark.circle", duration: 1.5)
+            return
+        }
 
         switch state {
         case .recording:
@@ -780,6 +795,7 @@ final class DictationViewModel: ObservableObject {
         // and honored as soon as the start completes.
         isStartInFlight = true
         pendingStopRequestedDuringStart = false
+        pendingCancelRequestedDuringStart = false
         Task { [weak self] in
             await self?.finishRecordingStart(
                 startTimestamp: startTimestamp,
@@ -871,13 +887,20 @@ final class DictationViewModel: ObservableObject {
             )
 
             isStartInFlight = false
-            if pendingStopRequestedDuringStart {
+            if pendingCancelRequestedDuringStart {
+                pendingCancelRequestedDuringStart = false
+                pendingStopRequestedDuringStart = false
+                let cancelledMessage = String(localized: "Cancelled")
+                abortActiveRecordingImmediately(sessionMessage: cancelledMessage)
+                showNotchFeedback(message: cancelledMessage, icon: "xmark.circle", duration: 1.5)
+            } else if pendingStopRequestedDuringStart {
                 pendingStopRequestedDuringStart = false
                 stopDictation()
             }
         } catch {
             isStartInFlight = false
             pendingStopRequestedDuringStart = false
+            pendingCancelRequestedDuringStart = false
             clearRecordingStartCueState()
             clearDeferredRecordingContext()
             restoreRecordingSideEffects()
