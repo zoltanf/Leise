@@ -1219,6 +1219,13 @@
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
+		<key>AA00000000000000000901</key>
+		<dict>
+			<key>fileRef</key>
+			<string>BB00000000000000000901</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
 		<key>AA00000000000000000121</key>
 		<dict>
 			<key>fileRef</key>
@@ -2331,6 +2338,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BB00000000000000000901</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>IndicatorPanelBase.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>BB00000000000000000121</key>
 		<dict>
 			<key>isa</key>
@@ -3227,6 +3245,7 @@
 				<string>BB00000000000000000094</string>
 				<string>B91F00000000000000000001</string>
 				<string>BB00000000000000000120</string>
+				<string>BB00000000000000000901</string>
 				<string>E5A1B2C3D4F5061728394A5C</string>
 				<string>BB00000000000000000121</string>
 				<string>BB00000000000000000122</string>
@@ -3864,6 +3883,7 @@
 				<string>AA00000000000000000093</string>
 				<string>AA00000000000000000119</string>
 				<string>AA00000000000000000120</string>
+				<string>AA00000000000000000901</string>
 				<string>E5A1B2C3D4F5061728394A5B</string>
 				<string>AA00000000000000000121</string>
 				<string>AA00000000000000000122</string>

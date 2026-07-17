@@ -26,24 +26,15 @@ final class NotchGeometry: ObservableObject {
     }
 }
 
-/// Hosting view that accepts first mouse click without requiring a prior activation click.
-private class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-}
-
 /// Panel that visually extends the MacBook notch, centered over the hardware notch.
 /// Only shown on displays with a hardware notch - hidden on non-notch displays regardless of settings.
-class NotchIndicatorPanel: NSPanel {
+class NotchIndicatorPanel: IndicatorPanelBase {
     /// Large enough to accommodate the expanded (open) state. SwiftUI clips the visible area.
     private static let panelWidth: CGFloat = 500
     private static let panelHeight: CGFloat = 500
     private static let presentationAnimationDuration: Duration = .milliseconds(220)
 
-    private let screenResolver: IndicatorScreenResolver
-    private let displayModeProvider: () -> NotchIndicatorDisplay
     private let notchGeometry = NotchGeometry()
-    private var cancellables = Set<AnyCancellable>()
-    private var cachedScreen: NSScreen?
     private var showTask: Task<Void, Never>?
     private var dismissTask: Task<Void, Never>?
 
@@ -60,104 +51,22 @@ class NotchIndicatorPanel: NSPanel {
         displayModeProvider: @escaping () -> NotchIndicatorDisplay,
         @ViewBuilder content: (NotchGeometry) -> Content
     ) {
-        self.screenResolver = screenResolver
-        self.displayModeProvider = displayModeProvider
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: Self.panelHeight),
-            styleMask: [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow],
-            backing: .buffered,
-            defer: false
+            screenResolver: screenResolver,
+            displayModeProvider: displayModeProvider,
+            indicatorStyle: .notch,
+            windowLevel: FloatingPanelSpacePolicy.notchIndicatorWindowLevel,
+            contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: Self.panelHeight)
         )
 
-        isFloatingPanel = true
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = false
-        isMovable = false
-        appearance = NSAppearance(named: .darkAqua)
-        hidesOnDeactivate = false
-        ignoresMouseEvents = true
-        FloatingPanelSpacePolicy.applyIndicatorPolicy(
-            to: self,
-            displayMode: displayModeProvider(),
-            windowLevel: FloatingPanelSpacePolicy.notchIndicatorWindowLevel
-        )
-
-        let hostingView = FirstMouseHostingView(rootView: content(notchGeometry))
+        let hostingView = IndicatorFirstMouseHostingView(rootView: content(notchGeometry))
         hostingView.sizingOptions = []
         contentView = hostingView
     }
 
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-
-    func startObserving() {
-        let vm = ServiceContainer.shared.dictationViewModel
-        let recorder = ServiceContainer.shared.audioRecorderViewModel
-
-        vm.$state
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateVisibility(vm: vm, recorder: recorder)
-            }
-            .store(in: &cancellables)
-
-        recorder.$state
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateVisibility(vm: vm, recorder: recorder)
-            }
-            .store(in: &cancellables)
-
-        vm.$notchIndicatorVisibility
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateVisibility(vm: vm, recorder: recorder)
-            }
-            .store(in: &cancellables)
-
-        vm.$notchIndicatorDisplay
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.cachedScreen = nil
-                self?.updateVisibility(vm: vm, recorder: recorder)
-            }
-            .store(in: &cancellables)
-
-        vm.$actionFeedbackUndoTitle
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] undoTitle in
-                self?.ignoresMouseEvents = undoTitle == nil
-            }
-            .store(in: &cancellables)
-    }
-
-    func updateVisibility(
-        vm: DictationViewModel = ServiceContainer.shared.dictationViewModel,
-        recorder: AudioRecorderViewModel = ServiceContainer.shared.audioRecorderViewModel
-    ) {
-        guard vm.indicatorStyle == .notch else {
-            dismiss()
-            return
-        }
-
-        let presentation = IndicatorPresentationState.resolve(
-            dictationState: vm.state,
-            recorderState: recorder.state
-        )
-        if IndicatorPresentationState.shouldShow(
-            visibility: vm.notchIndicatorVisibility,
-            presentation: presentation
-        ) {
-            show()
-        } else {
-            dismiss()
-        }
-    }
-
     // MARK: - Notch geometry
 
-    func show() {
+    override func show() {
         showTask?.cancel()
         dismissTask?.cancel()
 
@@ -200,18 +109,10 @@ class NotchIndicatorPanel: NSPanel {
         let y = screenFrame.origin.y + screenFrame.height - Self.panelHeight
 
         setFrame(NSRect(x: x, y: y, width: Self.panelWidth, height: Self.panelHeight), display: true)
-        FloatingPanelSpacePolicy.orderIndicatorFront(
-            self,
-            displayMode: displayModeProvider(),
-            windowLevel: FloatingPanelSpacePolicy.notchIndicatorWindowLevel
-        )
+        orderIndicatorFront()
     }
 
-    private func resolveScreen() -> NSScreen {
-        screenResolver.resolveScreen(for: displayModeProvider())
-    }
-
-    func refreshPlacementForActiveContextChange() {
+    override func refreshPlacementForActiveContextChange() {
         guard isVisible, notchGeometry.isPresented else { return }
         if displayModeProvider() == .activeScreen {
             cachedScreen = nil
@@ -219,7 +120,7 @@ class NotchIndicatorPanel: NSPanel {
         placePanel()
     }
 
-    func dismiss() {
+    override func dismiss() {
         cachedScreen = nil
         showTask?.cancel()
         showTask = nil
