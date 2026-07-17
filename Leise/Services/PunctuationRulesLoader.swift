@@ -1,11 +1,14 @@
 import Foundation
+import os
 
-final class PunctuationRulesLoader {
+final class PunctuationRulesLoader: Sendable {
     private let bundle: Bundle
-    private let dataLoader: ((String) -> Data?)?
-    private var cache: [String: PunctuationRuleSet] = [:]
+    private let dataLoader: (@Sendable (String) -> Data?)?
+    // One loader instance is shared between main-actor and non-isolated
+    // consumers, so the cache must be lock-protected.
+    private let cache = OSAllocatedUnfairLock<[String: PunctuationRuleSet]>(initialState: [:])
 
-    init(bundle: Bundle = .main, dataLoader: ((String) -> Data?)? = nil) {
+    init(bundle: Bundle = .main, dataLoader: (@Sendable (String) -> Data?)? = nil) {
         self.bundle = bundle
         self.dataLoader = dataLoader
     }
@@ -15,7 +18,7 @@ final class PunctuationRulesLoader {
             return nil
         }
 
-        if let cached = cache[normalizedLanguage] {
+        if let cached = cache.withLock({ $0[normalizedLanguage] }) {
             return cached
         }
 
@@ -24,7 +27,7 @@ final class PunctuationRulesLoader {
             return nil
         }
 
-        cache[normalizedLanguage] = ruleSet
+        cache.withLock { $0[normalizedLanguage] = ruleSet }
         return ruleSet
     }
 

@@ -135,7 +135,13 @@ private extension HotkeySlotType {
 }
 
 /// Manages global hotkeys for dictation and standalone app actions.
-final class HotkeyService: ObservableObject, @unchecked Sendable {
+///
+/// All mutable state is confined to the main thread: the CGEventTap run-loop
+/// source is attached to `CFRunLoopGetMain()`, the Carbon handler hops to main,
+/// NSEvent monitors deliver on main, and public mutators are called from
+/// `@MainActor` view models. `@MainActor` makes that invariant compiler-enforced.
+@MainActor
+final class HotkeyService: ObservableObject {
     struct MenuShortcutDescriptor: Equatable, Sendable {
         let keyEquivalent: Character
         let modifiers: NSEvent.ModifierFlags
@@ -312,7 +318,7 @@ final class HotkeyService: ObservableObject, @unchecked Sendable {
     }
     private var pendingDictationActions: [PendingDictationAction] = []
 
-    deinit {
+    isolated deinit {
         tearDownMonitor()
     }
 
@@ -779,7 +785,9 @@ final class HotkeyService: ObservableObject, @unchecked Sendable {
 
         let service = Unmanaged<HotkeyService>.fromOpaque(userData).takeUnretainedValue()
         DispatchQueue.main.async {
-            service.handleCarbonHotkey(id: hotkeyId.id, phase: phase)
+            MainActor.assumeIsolated {
+                service.handleCarbonHotkey(id: hotkeyId.id, phase: phase)
+            }
         }
         return noErr
     }
@@ -869,13 +877,16 @@ final class HotkeyService: ObservableObject, @unchecked Sendable {
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 
         // @convention(c) callback - must not capture context. Uses userInfo to access HotkeyService.
-        // The tap source is attached to the main run loop, but this callback does not execute as a
-        // MainActor task. Avoid MainActor runtime assumptions and route through unsafe main-thread-only helpers.
+        // The tap source is attached to the main run loop, so this callback runs on the main thread.
+        // It must return the suppression decision synchronously, so we enter MainActor isolation via
+        // `assumeIsolated` (never an async hop) to call back into the service.
         let callback: CGEventTapCallBack = { _, type, event, userInfo in
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
                 if let userInfo {
                     let service = Unmanaged<HotkeyService>.fromOpaque(userInfo).takeUnretainedValue()
-                    service.reenableEventTapAfterSystemDisable()
+                    MainActor.assumeIsolated {
+                        service.reenableEventTapAfterSystemDisable()
+                    }
                 }
                 return Unmanaged.passUnretained(event)
             }
@@ -885,7 +896,9 @@ final class HotkeyService: ObservableObject, @unchecked Sendable {
             }
 
             let service = Unmanaged<HotkeyService>.fromOpaque(userInfo).takeUnretainedValue()
-            let shouldSuppress = service.handleEventTapCallback(event)
+            let shouldSuppress = MainActor.assumeIsolated {
+                service.handleEventTapCallback(event)
+            }
             return shouldSuppress ? nil : Unmanaged.passUnretained(event)
         }
 
@@ -932,7 +945,9 @@ final class HotkeyService: ObservableObject, @unchecked Sendable {
         }
         logger.warning("CGEventTap was disabled by system, re-enabling")
         DispatchQueue.main.async { [weak self] in
-            self?.recoverReleasedActiveHotkeyAfterEventTapDisable()
+            MainActor.assumeIsolated {
+                self?.recoverReleasedActiveHotkeyAfterEventTapDisable()
+            }
         }
     }
 
@@ -1096,7 +1111,9 @@ final class HotkeyService: ObservableObject, @unchecked Sendable {
         pendingHybridModifierHoldHotkey = hotkey
 
         let workItem = DispatchWorkItem { [weak self] in
-            self?.activatePendingHybridModifierHold(generation: generation)
+            MainActor.assumeIsolated {
+                self?.activatePendingHybridModifierHold(generation: generation)
+            }
         }
         pendingHybridModifierHoldWorkItem = workItem
         DispatchQueue.main.asyncAfter(
@@ -1261,11 +1278,15 @@ final class HotkeyService: ObservableObject, @unchecked Sendable {
 
     private func performHotkeyAction(
         source: HotkeyEventSource,
-        _ action: @escaping @Sendable () -> Void
+        _ action: @escaping @MainActor () -> Void
     ) {
         switch source {
         case .eventTap:
-            DispatchQueue.main.async(execute: action)
+            // Defer the action to the next main run-loop iteration so the event-tap
+            // callback can return its suppression decision synchronously first.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated(action)
+            }
         case .monitor, .carbon:
             action()
         }

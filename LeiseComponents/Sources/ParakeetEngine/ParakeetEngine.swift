@@ -101,7 +101,7 @@ public enum ParakeetRuntimeRecovery {
 
 // MARK: - Engine implementation
 
-final class ParakeetEngineImplementation: TranscriptionEngine, @unchecked Sendable {
+final class ParakeetEngineImplementation: TranscriptionEngine {
     static let vocabularyAssetFileName = "parakeet_vocab.json"
     static let v2BundledFolderName = "parakeet-tdt-0.6b-v2"
     static let v3BundledFolderName = "parakeet-tdt-0.6b-v3"

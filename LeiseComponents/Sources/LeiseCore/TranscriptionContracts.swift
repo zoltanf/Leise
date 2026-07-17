@@ -1,13 +1,18 @@
 import Combine
 import Foundation
 
+/// Mono audio at exactly `TranscriptionAudio.sampleRate` (16 kHz). No engine
+/// in this package resamples: callers must convert before constructing one,
+/// or durations and transcription results are silently wrong.
 public struct TranscriptionAudio: Sendable {
+    public static let sampleRate: Double = 16_000
+
     public let samples: [Float]
     public let duration: TimeInterval
 
     public init(samples: [Float], duration: TimeInterval? = nil) {
         self.samples = samples
-        self.duration = duration ?? Double(samples.count) / 16_000
+        self.duration = duration ?? Double(samples.count) / Self.sampleRate
     }
 }
 
