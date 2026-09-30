@@ -180,7 +180,7 @@ final class DictationViewModel: ObservableObject {
     private var insertingResetTask: Task<Void, Never>?
     /// Aborted or cancelled sessions whose engine teardown is still running.
     /// The next start waits (bounded) for them so the two never overlap.
-    private var inFlightRecordingTeardowns = 0
+    private var inFlightRecordingTeardowns: Set<UUID> = []
     @Published private var cancelWarningTarget: CancelWarningTarget?
     private var urlResolutionTask: Task<Void, Never>?
     private var metadataCaptureTask: Task<Void, Never>?
@@ -586,19 +586,22 @@ final class DictationViewModel: ObservableObject {
     }
 
     private func trackRecordingTeardown(_ teardown: Task<Void, Never>) {
-        inFlightRecordingTeardowns += 1
+        let id = UUID()
+        inFlightRecordingTeardowns.insert(id)
         Task { [weak self] in
             await teardown.value
-            self?.inFlightRecordingTeardowns -= 1
+            self?.inFlightRecordingTeardowns.remove(id)
         }
     }
 
     /// Bounded so a wedged audio device cannot block every later dictation.
     private func waitForRecordingTeardown(timeout: Duration = .seconds(3)) async {
         let deadline = ContinuousClock.now + timeout
-        while inFlightRecordingTeardowns > 0 {
+        while !inFlightRecordingTeardowns.isEmpty {
             guard ContinuousClock.now < deadline else {
                 logger.warning("Starting recording while a previous session's engine teardown is still running")
+                // Give up on hung teardowns once; later starts must not pay again.
+                inFlightRecordingTeardowns.removeAll()
                 return
             }
             try? await Task.sleep(for: .milliseconds(20))
