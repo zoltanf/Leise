@@ -473,10 +473,18 @@ final class AudioRecorderViewModel: ObservableObject {
         state = .finalizing
         Task {
             await streamingHandler.finish()
-            let url = await recorderService.stopRecording()
+            let outcome = await recorderService.stopRecording()
+            let url = outcome.url
 
-            if url == nil {
+            switch outcome {
+            case .saved:
+                break
+            case .preservedRawAudio:
+                errorMessage = String(localized: "The recording could not be converted, so its original audio was saved as WAV.")
+            case .empty:
                 errorMessage = String(localized: "The recording could not be saved.")
+            case .failed:
+                errorMessage = String(localized: "The recording could not be saved. Its audio will be recovered the next time Leise starts.")
             }
 
             let finalTranscriptionRequest: FinalTranscriptionRequest?
@@ -510,6 +518,22 @@ final class AudioRecorderViewModel: ObservableObject {
                 loadRecordings()
             }
         }
+    }
+
+    /// Moves recorder temp tracks left behind by a crash or a stalled stop
+    /// into the recordings folder. Called once at launch.
+    func recoverInterruptedRecordings() async {
+        guard state == .idle else { return }
+        let recordingsDirectory = recorderService.recordingsDirectory
+        let recovered = await RecordingFinalizer.onBackgroundQueue {
+            RecordingFinalizer.recoverOrphanedTracks(
+                in: FileManager.default.temporaryDirectory,
+                to: recordingsDirectory
+            )
+        }
+        guard !recovered.isEmpty else { return }
+        errorMessage = String(localized: "Audio from an interrupted recording was recovered into the recordings folder.")
+        loadRecordings()
     }
 
     func deleteRecording(_ item: RecordingItem) {
