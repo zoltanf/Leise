@@ -14,6 +14,8 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         let recordingService: AudioRecordingService
         let startCallCount: OSAllocatedUnfairLock<Int>
         let stopCallCount: OSAllocatedUnfairLock<Int>
+        /// Engine calls in order: "start", "stop-begin", "stop-end".
+        let engineEvents: OSAllocatedUnfairLock<[String]>
 
         func fireStartHotkey() {
             hotkeyService.onDictationStart?(DispatchTime.now().uptimeNanoseconds)
@@ -38,6 +40,7 @@ final class DictationViewModelStateMachineTests: XCTestCase {
 
         let startCallCount = OSAllocatedUnfairLock(initialState: 0)
         let stopCallCount = OSAllocatedUnfairLock(initialState: 0)
+        let engineEvents = OSAllocatedUnfairLock<[String]>(initialState: [])
 
         let recordingService = AudioRecordingService()
         recordingService.hasMicrophonePermissionOverride = microphonePermission
@@ -46,12 +49,15 @@ final class DictationViewModelStateMachineTests: XCTestCase {
                 Thread.sleep(forTimeInterval: startDelay)
             }
             startCallCount.withLock { $0 += 1 }
+            engineEvents.withLock { $0.append("start") }
         }
         recordingService.stopRecordingOverride = { _ in
             stopCallCount.withLock { $0 += 1 }
+            engineEvents.withLock { $0.append("stop-begin") }
             if stopDelay > 0 {
                 try? await Task.sleep(for: .seconds(stopDelay))
             }
+            engineEvents.withLock { $0.append("stop-end") }
             return []
         }
 
@@ -95,7 +101,8 @@ final class DictationViewModelStateMachineTests: XCTestCase {
             hotkeyService: hotkeyService,
             recordingService: recordingService,
             startCallCount: startCallCount,
-            stopCallCount: stopCallCount
+            stopCallCount: stopCallCount,
+            engineEvents: engineEvents
         )
     }
 
@@ -267,7 +274,7 @@ final class DictationViewModelStateMachineTests: XCTestCase {
 
     @MainActor
     func testStartDuringProcessingRunsOnceProcessingEnds() async throws {
-        let harness = try makeHarness(stopDelay: 0.3)
+        let harness = try makeHarness(stopDelay: 0.5)
 
         harness.fireStartHotkey()
         await waitUntil { harness.viewModel.state == .recording }
@@ -321,5 +328,28 @@ final class DictationViewModelStateMachineTests: XCTestCase {
 
         XCTAssertNotEqual(harness.viewModel.state, .recording)
         XCTAssertEqual(harness.startCallCount.withLock { $0 }, 1)
+    }
+
+    @MainActor
+    func testStartRightAfterAbortWaitsForEngineTeardown() async throws {
+        let harness = try makeHarness(stopDelay: 0.3)
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        // Esc twice aborts; the engine stop keeps running in the background
+        // while the "Cancelled" feedback shows.
+        harness.viewModel.handleCancelHotkey()
+        harness.viewModel.handleCancelHotkey()
+        XCTAssertEqual(harness.viewModel.state, .inserting)
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+
+        XCTAssertEqual(harness.viewModel.state, .recording)
+        XCTAssertEqual(
+            harness.engineEvents.withLock { $0 },
+            ["start", "stop-begin", "stop-end", "start"],
+            "the new engine start must wait for the aborted session's stop"
+        )
     }
 }

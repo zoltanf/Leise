@@ -178,6 +178,9 @@ final class DictationViewModel: ObservableObject {
     private var stopFinalizationTask: Task<Void, Never>?
     private var errorResetTask: Task<Void, Never>?
     private var insertingResetTask: Task<Void, Never>?
+    /// Aborted or cancelled sessions whose engine teardown is still running.
+    /// The next start waits (bounded) for them so the two never overlap.
+    private var inFlightRecordingTeardowns = 0
     @Published private var cancelWarningTarget: CancelWarningTarget?
     private var urlResolutionTask: Task<Void, Never>?
     private var metadataCaptureTask: Task<Void, Never>?
@@ -570,16 +573,36 @@ final class DictationViewModel: ObservableObject {
         restoreRecordingSideEffects()
         streamingHandler.stop()
         stopRecordingTimer()
-        Task {
+        trackRecordingTeardown(Task {
             _ = await audioRecordingService.stopRecording(policy: .immediate)
             if preserveRecoveryAudio {
                 audioRecordingService.preserveActiveRecoveryRecording()
             } else {
                 audioRecordingService.discardActiveRecoveryRecording()
             }
-        }
+        })
         cancelActiveDictationSessionIfNeeded(message: sessionMessage)
         hotkeyService.cancelDictation()
+    }
+
+    private func trackRecordingTeardown(_ teardown: Task<Void, Never>) {
+        inFlightRecordingTeardowns += 1
+        Task { [weak self] in
+            await teardown.value
+            self?.inFlightRecordingTeardowns -= 1
+        }
+    }
+
+    /// Bounded so a wedged audio device cannot block every later dictation.
+    private func waitForRecordingTeardown(timeout: Duration = .seconds(3)) async {
+        let deadline = ContinuousClock.now + timeout
+        while inFlightRecordingTeardowns > 0 {
+            guard ContinuousClock.now < deadline else {
+                logger.warning("Starting recording while a previous session's engine teardown is still running")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     private func setupBindings() {
@@ -728,8 +751,16 @@ final class DictationViewModel: ObservableObject {
             abortActiveRecordingImmediately(sessionMessage: cancelledMessage)
             showNotchFeedback(message: cancelledMessage, icon: "xmark.circle", duration: 1.5)
         case .processing:
-            pendingStartAfterProcessing = nil
+            if pendingStartAfterProcessing != nil {
+                // The queued start's hotkey is still active; resync it so the
+                // next press starts instead of acting as a phantom stop.
+                pendingStartAfterProcessing = nil
+                hotkeyService.cancelDictation()
+            }
             cancelActiveDictationSessionIfNeeded(message: cancelledMessage)
+            if let stopFinalizationTask {
+                trackRecordingTeardown(stopFinalizationTask)
+            }
             stopFinalizationTask?.cancel()
             stopFinalizationTask = nil
             streamingHandler.stop()
@@ -849,6 +880,9 @@ final class DictationViewModel: ObservableObject {
         initialForcedProfile: Profile?
     ) async {
         let selectedInputUsesBluetooth = resolvedInputSelection.usesBluetoothTransport
+        // A start can now follow an abort or cancel immediately; let that
+        // session finish releasing the engine and its recovery audio first.
+        await waitForRecordingTeardown()
         do {
             let audioStartTimestamp = DispatchTime.now().uptimeNanoseconds
             try await PerformanceMilestones.measure(.audioStart) {
@@ -1547,6 +1581,9 @@ final class DictationViewModel: ObservableObject {
     }
 
     private func handlePushToTalkInterruption() {
+        // Extra keys while the push-to-talk key is held mean a shortcut, not
+        // a dictation; drop a start queued for that hold.
+        pendingStartAfterProcessing = nil
         guard state == .recording, !isStopInFlight else { return }
         pendingPushToTalkDiscardMessage = String(localized: "Recording discarded because additional keys were pressed")
     }
