@@ -2578,6 +2578,24 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BB00000000000000000903</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>RecordingFinalizer.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>AA00000000000000000903</key>
+		<dict>
+			<key>fileRef</key>
+			<string>BB00000000000000000903</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
 		<key>BB00000000000000000238</key>
 		<dict>
 			<key>isa</key>
@@ -3202,6 +3220,7 @@
 				<string>BB00000000000000000335</string>
 				<string>BB00000000000000000336</string>
 				<string>BB00000000000000000238</string>
+				<string>BB00000000000000000903</string>
 				<string>BB00000000000000000244</string>
 				<string>BB00000000000000000246</string>
 				<string>BB00000000000000000272</string>
@@ -3455,6 +3474,7 @@
 				<string>F41BD305007A3A158038C75C</string>
 				<string>7D2E4F50617283946C1F7A8B</string>
 				<string>D4A100000000000000000004</string>
+				<string>D4A100000000000000000014</string>
 				<string>91B4D7E2C5A809F1632E4B7F</string>
 				<string>BB00000000000000000902</string>
 				<string>B26D2C342D877030A62CE027</string>
@@ -3491,6 +3511,26 @@
 		<dict>
 			<key>fileRef</key>
 			<string>D4A100000000000000000004</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>D4A100000000000000000014</key>
+		<dict>
+			<key>includeInIndex</key>
+			<string>1</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>RecordingFinalizerTests.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>D4A100000000000000000013</key>
+		<dict>
+			<key>fileRef</key>
+			<string>D4A100000000000000000014</string>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
@@ -3554,6 +3594,7 @@
 				<string>86F4253D3CDE30E859D0F219</string>
 				<string>6C1F7A8B9D2E4F5061728394</string>
 				<string>D4A100000000000000000003</string>
+				<string>D4A100000000000000000013</string>
 				<string>91B4D7E2C5A809F1632E4B7E</string>
 				<string>AA00000000000000000902</string>
 				<string>204C804898EAE1127B62EC98</string>
@@ -3942,6 +3983,7 @@
 				<string>AA00000000000000000336</string>
 				<string>D4A100000000000000000001</string>
 				<string>AA00000000000000000250</string>
+				<string>AA00000000000000000903</string>
 				<string>AA00000000000000000251</string>
 				<string>AA00000000000000000252</string>
 				<string>AA00000000000000000255</string>

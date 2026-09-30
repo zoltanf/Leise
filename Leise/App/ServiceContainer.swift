@@ -267,6 +267,9 @@ final class ServiceContainer: ObservableObject {
             await Task.yield()
             guard let self, !Task.isCancelled else { return }
 
+            await audioRecorderViewModel.recoverInterruptedRecordings()
+            guard !Task.isCancelled else { return }
+
             if usageStatisticsService.needsHistoryBackfill {
                 await usageStatisticsService.backfillFromHistoryIfNeededInBatches(
                     historyService.records

@@ -64,7 +64,7 @@ the same first-launch instruction after installation when it is needed.
 ## Requirements
 
 - macOS 14 or newer
-- Xcode 16 or newer
+- Xcode 26 or newer (Swift 6.3+) to build from source
 - Apple Silicon is recommended for local MLX models
 - 8 GB RAM minimum; 16 GB or more is recommended for larger models
 
