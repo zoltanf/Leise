@@ -6,8 +6,8 @@
 | --- | --- |
 | Runtime floor | macOS 14+ |
 | Recommended hardware | Apple Silicon |
-| Development toolchain | Xcode 16+ |
-| Current distribution | Local testing only |
+| Development toolchain | Xcode 26+ (Swift 6.3+) |
+| Current distribution | GitHub Releases and Homebrew cask (ad-hoc signed, not notarized) |
 
 ## Product surface
 

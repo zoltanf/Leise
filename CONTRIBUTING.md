@@ -5,7 +5,7 @@ Thanks for your interest in contributing!
 ## Getting Started
 
 1. Fork the repository and clone it
-2. Open `Leise.xcodeproj` in Xcode 16+
+2. Open `Leise.xcodeproj` in Xcode 26+
 3. SPM dependencies resolve automatically on first build
 4. Build and run (Cmd+R) - the app appears as a menu bar icon
 
@@ -21,9 +21,10 @@ echo 'DEVELOPMENT_TEAM = YOUR_TEAM_ID' > CodeSigning.local.xcconfig
 ## Development Setup
 
 - **Product runtime support:** macOS 14.0+
-- **Contributor machine:** macOS 15.0+ recommended for the current Xcode toolchain
+- **Contributor machine:** macOS 15.6+ with Xcode 26+ (Swift 6.3+); CI runs on the `macos-26` runner
 - **Swift 6** with strict concurrency
 - Debug builds use a separate data directory (`Leise-Dev`) and keychain prefix, so they don't interfere with release builds
+- New files in the app or test targets must be added to `Leise.xcodeproj/project.pbxproj`; files in the `LeiseComponents` package are picked up automatically
 
 ## Pull Requests
 
@@ -36,6 +37,7 @@ echo 'DEVELOPMENT_TEAM = YOUR_TEAM_ID' > CodeSigning.local.xcconfig
 Recommended checks:
 
 ```bash
+scripts/pr-preflight.sh origin/main
 xcodebuild test -project Leise.xcodeproj -scheme Leise -destination 'platform=macOS,arch=arm64' -parallel-testing-enabled NO CODE_SIGN_IDENTITY='-' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 swift test --package-path LeiseComponents
 ```
