@@ -28,7 +28,8 @@ final class DictationViewModelStateMachineTests: XCTestCase {
     private func makeHarness(
         engineAvailable: Bool = true,
         microphonePermission: Bool = true,
-        startDelay: TimeInterval = 0
+        startDelay: TimeInterval = 0,
+        stopDelay: TimeInterval = 0
     ) throws -> Harness {
         let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
         addTeardownBlock {
@@ -48,6 +49,9 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         }
         recordingService.stopRecordingOverride = { _ in
             stopCallCount.withLock { $0 += 1 }
+            if stopDelay > 0 {
+                try? await Task.sleep(for: .seconds(stopDelay))
+            }
             return []
         }
 
@@ -237,5 +241,85 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         XCTAssertEqual(harness.stopCallCount.withLock { $0 }, 1)
         await waitUntil { harness.viewModel.state != .recording }
         XCTAssertNotEqual(harness.viewModel.state, .recording)
+    }
+
+    // MARK: - Restart after a dictation
+
+    @MainActor
+    func testStartDuringFeedbackDisplayStartsNewRecording() async throws {
+        let harness = try makeHarness()
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        // The fake engine returns no samples, so the stop ends in the 1.8 s
+        // "Too short" feedback display (.inserting).
+        harness.fireStopHotkey()
+        await waitUntil { harness.viewModel.state == .inserting }
+        XCTAssertEqual(harness.viewModel.state, .inserting)
+
+        harness.fireStartHotkey()
+        // Well inside the feedback display: the start must not wait for it.
+        await waitUntil(timeout: 1.0) { harness.viewModel.state == .recording }
+
+        XCTAssertEqual(harness.viewModel.state, .recording)
+        XCTAssertEqual(harness.startCallCount.withLock { $0 }, 2)
+    }
+
+    @MainActor
+    func testStartDuringProcessingRunsOnceProcessingEnds() async throws {
+        let harness = try makeHarness(stopDelay: 0.3)
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        harness.fireStopHotkey()
+        XCTAssertEqual(harness.viewModel.state, .processing)
+
+        harness.fireStartHotkey()
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(harness.viewModel.state, .processing)
+        XCTAssertEqual(harness.startCallCount.withLock { $0 }, 1, "the start must wait for processing to end")
+
+        await waitUntil { harness.viewModel.state == .recording }
+        XCTAssertEqual(harness.viewModel.state, .recording)
+        XCTAssertEqual(harness.startCallCount.withLock { $0 }, 2)
+    }
+
+    @MainActor
+    func testReleaseBeforeQueuedStartRunsDropsIt() async throws {
+        let harness = try makeHarness(stopDelay: 0.3)
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        harness.fireStopHotkey()
+        harness.fireStartHotkey()
+        // Push-to-talk released while the previous dictation is still processing.
+        harness.fireStopHotkey()
+
+        await waitUntil { harness.viewModel.state == .inserting }
+        // Give an incorrectly retained queued start a chance to surface.
+        try? await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertNotEqual(harness.viewModel.state, .recording)
+        XCTAssertEqual(harness.startCallCount.withLock { $0 }, 1)
+        XCTAssertEqual(harness.stopCallCount.withLock { $0 }, 1)
+    }
+
+    @MainActor
+    func testCancelDuringProcessingDropsQueuedStart() async throws {
+        let harness = try makeHarness(stopDelay: 0.3)
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        harness.fireStopHotkey()
+        harness.fireStartHotkey()
+        // First press arms the warning; the second cancels processing.
+        harness.viewModel.handleCancelHotkey()
+        harness.viewModel.handleCancelHotkey()
+
+        await waitUntil { harness.viewModel.state == .inserting }
+        try? await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertNotEqual(harness.viewModel.state, .recording)
+        XCTAssertEqual(harness.startCallCount.withLock { $0 }, 1)
     }
 }

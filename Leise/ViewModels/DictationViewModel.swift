@@ -47,7 +47,12 @@ final class DictationViewModel: ObservableObject {
     }
 
     @Published var state: State = .idle {
-        didSet { clearCancelWarningIfStateNoLongerMatches() }
+        didSet {
+            clearCancelWarningIfStateNoLongerMatches()
+            if oldValue == .processing, state != .processing {
+                runPendingStartAfterProcessing()
+            }
+        }
     }
     @Published var audioLevel: Float = 0
     @Published var recordingDuration: TimeInterval = 0
@@ -195,6 +200,13 @@ final class DictationViewModel: ObservableObject {
     private var isStartInFlight = false
     private var pendingStopRequestedDuringStart = false
     private var pendingCancelRequestedDuringStart = false
+    private struct PendingStart {
+        let forcedProfileId: UUID?
+        let sessionID: UUID
+    }
+    /// A start requested while the previous dictation is still processing. It
+    /// runs as soon as that processing ends instead of being dropped.
+    private var pendingStartAfterProcessing: PendingStart?
     private var activeDictationSessionID: UUID?
     private var pendingPushToTalkDiscardMessage: String?
     private var recordingStartCuePending = false
@@ -331,7 +343,12 @@ final class DictationViewModel: ObservableObject {
         }
 
         recentTranscriptionPaletteHandler.onShowNotchFeedback = { [weak self] message, icon, duration, isError, category in
-            self?.showNotchFeedback(message: message, icon: icon, duration: duration, isError: isError, errorCategory: category ?? "general")
+            guard let self else { return }
+            // Feedback takes over `state` (.inserting plus a reset timer); a
+            // palette insert that finishes after a dictation began must not
+            // clobber that dictation's state.
+            guard !isStartInFlight, state != .recording, state != .processing else { return }
+            showNotchFeedback(message: message, icon: icon, duration: duration, isError: isError, errorCategory: category ?? "general")
         }
         recentTranscriptionPaletteHandler.getPreserveClipboard = { [weak self] in
             self?.preserveClipboard ?? false
@@ -711,6 +728,7 @@ final class DictationViewModel: ObservableObject {
             abortActiveRecordingImmediately(sessionMessage: cancelledMessage)
             showNotchFeedback(message: cancelledMessage, icon: "xmark.circle", duration: 1.5)
         case .processing:
+            pendingStartAfterProcessing = nil
             cancelActiveDictationSessionIfNeeded(message: cancelledMessage)
             stopFinalizationTask?.cancel()
             stopFinalizationTask = nil
@@ -730,6 +748,20 @@ final class DictationViewModel: ObservableObject {
         sessionID: UUID = UUID(),
         requestUptimeNanoseconds: UInt64 = DispatchTime.now().uptimeNanoseconds
     ) {
+        if state == .processing {
+            // The previous dictation is still being transcribed. Queue the
+            // start instead of dropping it, and leave the hotkey active so its
+            // release still reaches stopDictation().
+            logger.info("startRecording queued: previous dictation still processing")
+            pendingStartAfterProcessing = PendingStart(forcedProfileId: forcedProfileId, sessionID: sessionID)
+            return
+        }
+        if state == .inserting, !isStartInFlight {
+            // `.inserting` only displays feedback for a finished dictation; a
+            // new start replaces it instead of waiting for the display timer.
+            logger.info("startRecording replacing feedback display")
+            resetDictationState()
+        }
         guard state == .idle, !isStartInFlight else {
             logger.warning("startRecording rejected: state=\(String(describing: self.state), privacy: .public), startInFlight=\(self.isStartInFlight, privacy: .public); resetting hotkey state")
             hotkeyService.cancelDictation()
@@ -1034,7 +1066,25 @@ final class DictationViewModel: ObservableObject {
         return trimmed?.isEmpty == false ? trimmed : nil
     }
 
+    private func runPendingStartAfterProcessing() {
+        guard pendingStartAfterProcessing != nil else { return }
+        // Hop once so the finished pipeline completes its synchronous tail
+        // before the next dictation resets shared state.
+        Task { [weak self] in
+            guard let self, let pending = pendingStartAfterProcessing else { return }
+            pendingStartAfterProcessing = nil
+            logger.info("Running dictation start queued during processing")
+            startRecording(forcedProfileId: pending.forcedProfileId, sessionID: pending.sessionID)
+        }
+    }
+
     private func stopDictation() {
+        if pendingStartAfterProcessing != nil {
+            // Released before the queued start could run; nothing was recorded.
+            logger.info("Dropping queued dictation start: hotkey released while previous dictation was processing")
+            pendingStartAfterProcessing = nil
+            return
+        }
         if isStartInFlight {
             // The hotkey was released before the audio engine finished
             // starting; honor the stop as soon as the start completes.

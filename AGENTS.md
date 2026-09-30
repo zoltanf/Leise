@@ -28,8 +28,10 @@ traps in debug builds or SwiftUI corruption in release builds:
   sequences on a dedicated `DispatchQueue`.
 - The dictation start/stop/cancel state machine is guarded by
   `isStartInFlight` / `isStopInFlight` / pending-during-start flags in
-  `DictationViewModel`; changes there must extend
-  `LeiseTests/DictationViewModelStateMachineTests`.
+  `DictationViewModel`. A start during `.processing` is queued
+  (`pendingStartAfterProcessing`), and a start during `.inserting` (feedback
+  display only) replaces the display; neither is dropped. Changes there must
+  extend `LeiseTests/DictationViewModelStateMachineTests`.
 
 ## Localization conventions
 
