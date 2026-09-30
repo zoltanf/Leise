@@ -12,6 +12,8 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         let viewModel: DictationViewModel
         let hotkeyService: HotkeyService
         let recordingService: AudioRecordingService
+        let textInsertionService: TextInsertionService
+        let engine: TestTranscriptionEngine
         let startCallCount: OSAllocatedUnfairLock<Int>
         let stopCallCount: OSAllocatedUnfairLock<Int>
         /// Engine calls in order: "start", "stop-begin", "stop-end".
@@ -31,7 +33,8 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         engineAvailable: Bool = true,
         microphonePermission: Bool = true,
         startDelay: TimeInterval = 0,
-        stopDelay: TimeInterval = 0
+        stopDelay: TimeInterval = 0,
+        stopSamples: [Float] = []
     ) throws -> Harness {
         let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
         addTeardownBlock {
@@ -58,12 +61,20 @@ final class DictationViewModelStateMachineTests: XCTestCase {
                 try? await Task.sleep(for: .seconds(stopDelay))
             }
             engineEvents.withLock { $0.append("stop-end") }
-            return []
+            return stopSamples
         }
 
+        let engine = TestTranscriptionEngine()
         let modelManager = engineAvailable
-            ? ModelManagerService(engine: TestTranscriptionEngine())
+            ? ModelManagerService(engine: engine)
             : ModelManagerService()
+        let textInsertionService = TextInsertionService()
+        // Keep insertion off the user's real clipboard and away from AX.
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("LeiseTests-\(UUID().uuidString)"))
+        textInsertionService.pasteboardProvider = { pasteboard }
+        textInsertionService.accessibilityGrantedOverride = true
+        textInsertionService.captureActiveAppOverride = { (name: "Test", bundleId: "com.leise.tests", url: nil) }
+        textInsertionService.pasteSimulatorOverride = {}
         let hotkeyService = HotkeyService()
         let punctuationProfileStore = DictationPunctuationProfileStore(
             defaults: UserDefaults(suiteName: UUID().uuidString)!,
@@ -73,7 +84,7 @@ final class DictationViewModelStateMachineTests: XCTestCase {
 
         let viewModel = DictationViewModel(
             audioRecordingService: recordingService,
-            textInsertionService: TextInsertionService(),
+            textInsertionService: textInsertionService,
             hotkeyService: hotkeyService,
             modelManager: modelManager,
             settingsViewModel: SettingsViewModel(modelManager: modelManager),
@@ -100,6 +111,8 @@ final class DictationViewModelStateMachineTests: XCTestCase {
             viewModel: viewModel,
             hotkeyService: hotkeyService,
             recordingService: recordingService,
+            textInsertionService: textInsertionService,
+            engine: engine,
             startCallCount: startCallCount,
             stopCallCount: stopCallCount,
             engineEvents: engineEvents
@@ -351,5 +364,53 @@ final class DictationViewModelStateMachineTests: XCTestCase {
             ["start", "stop-begin", "stop-end", "start"],
             "the new engine start must wait for the aborted session's stop"
         )
+    }
+
+    /// 1.5 s of audio loud enough to be transcribed rather than discarded.
+    private static let speechSamples = [Float](repeating: 0.1, count: 24_000)
+
+    @MainActor
+    func testCancelDuringInsertionDoesNotClobberNextRecording() async throws {
+        let harness = try makeHarness(stopSamples: Self.speechSamples)
+        var pasted = false
+        harness.textInsertionService.pasteSimulatorOverride = {
+            pasted = true
+            // Esc twice while dictation A is mid-insert, then start B at once.
+            harness.viewModel.handleCancelHotkey()
+            harness.viewModel.handleCancelHotkey()
+            harness.fireStartHotkey()
+        }
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        harness.fireStopHotkey()
+        await waitUntil(timeout: 5) {
+            pasted && harness.startCallCount.withLock { $0 } == 2 && harness.viewModel.state == .recording
+        }
+        XCTAssertEqual(harness.viewModel.state, .recording)
+
+        // Outlast A's 1.5 s feedback reset, which must never have been armed.
+        try? await Task.sleep(for: .seconds(2))
+        XCTAssertEqual(harness.viewModel.state, .recording, "cancelled dictation A reset dictation B")
+    }
+
+    @MainActor
+    func testExtraKeyWhileStartWaitsForTeardownDiscardsRecording() async throws {
+        let harness = try makeHarness(stopDelay: 0.3, stopSamples: Self.speechSamples)
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        harness.viewModel.handleCancelHotkey()
+        harness.viewModel.handleCancelHotkey()
+        // B waits for A's engine teardown; an extra key during that wait
+        // makes the hold a shortcut, not a dictation.
+        harness.fireStartHotkey()
+        harness.hotkeyService.onPushToTalkInterruption?()
+        await waitUntil { harness.viewModel.state == .recording }
+        harness.fireStopHotkey()
+        await waitUntil { harness.viewModel.state == .inserting }
+        try? await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertTrue(harness.engine.requests.isEmpty, "the interrupted hold must not be transcribed")
     }
 }

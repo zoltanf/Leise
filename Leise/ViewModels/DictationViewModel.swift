@@ -1353,6 +1353,10 @@ final class DictationViewModel: ObservableObject {
                     )
                 }
                 logger.info("Stop timing: text inserted elapsedMs=\(stopElapsedMs(), privacy: .public)")
+                // Cancelled while inserting (insertion swallows cancellation):
+                // the next dictation may already own `state`, so this one must
+                // not show feedback or arm the reset timer.
+                guard !Task.isCancelled else { return }
                 let insertionFailed = insertionResult
                     == .pasted(verification: .unverified(.focusedTextUnchanged))
                 if case .pasted(.unverified(let reason)) = insertionResult {
@@ -1587,7 +1591,9 @@ final class DictationViewModel: ObservableObject {
         // Extra keys while the push-to-talk key is held mean a shortcut, not
         // a dictation; drop a start queued for that hold.
         pendingStartAfterProcessing = nil
-        guard state == .recording, !isStopInFlight else { return }
+        // A start still in flight (engine start or teardown wait) is the same
+        // hold; startRecording clears the message before the next one.
+        guard state == .recording || isStartInFlight, !isStopInFlight else { return }
         pendingPushToTalkDiscardMessage = String(localized: "Recording discarded because additional keys were pressed")
     }
 
