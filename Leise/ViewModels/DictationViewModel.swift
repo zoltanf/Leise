@@ -1266,6 +1266,9 @@ final class DictationViewModel: ObservableObject {
                     )
                 }
                 logger.info("Stop timing: text inserted elapsedMs=\(stopElapsedMs(), privacy: .public)")
+                // Insertion ignores cancellation so the clipboard restore keeps its
+                // delay; a cancel that landed meanwhile still skips completion.
+                guard !Task.isCancelled else { return }
                 let insertionFailed = insertionResult
                     == .pasted(verification: .unverified(.focusedTextUnchanged))
                 if case .pasted(.unverified(let reason)) = insertionResult {
