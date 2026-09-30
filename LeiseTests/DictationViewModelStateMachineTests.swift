@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 import os
 import LeiseCore
@@ -12,8 +13,11 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         let viewModel: DictationViewModel
         let hotkeyService: HotkeyService
         let recordingService: AudioRecordingService
+        let historyService: HistoryService
+        let recentTranscriptionStore: RecentTranscriptionStore
         let startCallCount: OSAllocatedUnfairLock<Int>
         let stopCallCount: OSAllocatedUnfairLock<Int>
+        let pasteCount: OSAllocatedUnfairLock<Int>
 
         func fireStartHotkey() {
             hotkeyService.onDictationStart?(DispatchTime.now().uptimeNanoseconds)
@@ -28,7 +32,9 @@ final class DictationViewModelStateMachineTests: XCTestCase {
     private func makeHarness(
         engineAvailable: Bool = true,
         microphonePermission: Bool = true,
-        startDelay: TimeInterval = 0
+        startDelay: TimeInterval = 0,
+        recordedSamples: [Float] = [],
+        postProcessors: [any TextPostProcessor] = []
     ) throws -> Harness {
         let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
         addTeardownBlock {
@@ -37,6 +43,7 @@ final class DictationViewModelStateMachineTests: XCTestCase {
 
         let startCallCount = OSAllocatedUnfairLock(initialState: 0)
         let stopCallCount = OSAllocatedUnfairLock(initialState: 0)
+        let pasteCount = OSAllocatedUnfairLock(initialState: 0)
 
         let recordingService = AudioRecordingService()
         recordingService.hasMicrophonePermissionOverride = microphonePermission
@@ -48,8 +55,22 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         }
         recordingService.stopRecordingOverride = { _ in
             stopCallCount.withLock { $0 += 1 }
-            return []
+            return recordedSamples
         }
+
+        // Never touch the real pasteboard, focused app, or keyboard.
+        let pasteboard = NSPasteboard.withUniqueName()
+        addTeardownBlock {
+            pasteboard.releaseGlobally()
+        }
+        let textInsertionService = TextInsertionService()
+        textInsertionService.accessibilityGrantedOverride = true
+        textInsertionService.pasteboardProvider = { pasteboard }
+        textInsertionService.focusedTextFieldOverride = { false }
+        textInsertionService.focusedTextElementOverride = { nil }
+        textInsertionService.captureActiveAppOverride = { (name: "TextEdit", bundleId: "com.apple.TextEdit", url: nil) }
+        textInsertionService.pasteSimulatorOverride = { pasteCount.withLock { $0 += 1 } }
+        textInsertionService.returnSimulatorOverride = {}
 
         let modelManager = engineAvailable
             ? ModelManagerService(engine: TestTranscriptionEngine())
@@ -60,15 +81,17 @@ final class DictationViewModelStateMachineTests: XCTestCase {
             storageKey: UUID().uuidString
         )
         let punctuationRulesLoader = PunctuationRulesLoader()
+        let historyService = HistoryService(appSupportDirectory: appSupportDirectory)
+        let recentTranscriptionStore = RecentTranscriptionStore()
 
         let viewModel = DictationViewModel(
             audioRecordingService: recordingService,
-            textInsertionService: TextInsertionService(),
+            textInsertionService: textInsertionService,
             hotkeyService: hotkeyService,
             modelManager: modelManager,
             settingsViewModel: SettingsViewModel(modelManager: modelManager),
-            historyService: HistoryService(appSupportDirectory: appSupportDirectory),
-            recentTranscriptionStore: RecentTranscriptionStore(),
+            historyService: historyService,
+            recentTranscriptionStore: recentTranscriptionStore,
             profileService: ProfileService(appSupportDirectory: appSupportDirectory),
             audioDuckingService: AudioDuckingService(),
             dictionaryService: DictionaryService(appSupportDirectory: appSupportDirectory),
@@ -83,15 +106,19 @@ final class DictationViewModelStateMachineTests: XCTestCase {
             speechPunctuationService: SpeechPunctuationService(rulesLoader: punctuationRulesLoader),
             accessibilityAnnouncementService: AccessibilityAnnouncementService(),
             errorLogService: ErrorLogService(appSupportDirectory: appSupportDirectory),
-            mediaPlaybackService: MediaPlaybackService(startListening: false)
+            mediaPlaybackService: MediaPlaybackService(startListening: false),
+            postProcessors: postProcessors
         )
 
         return Harness(
             viewModel: viewModel,
             hotkeyService: hotkeyService,
             recordingService: recordingService,
+            historyService: historyService,
+            recentTranscriptionStore: recentTranscriptionStore,
             startCallCount: startCallCount,
-            stopCallCount: stopCallCount
+            stopCallCount: stopCallCount,
+            pasteCount: pasteCount
         )
     }
 
@@ -237,5 +264,73 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         XCTAssertEqual(harness.stopCallCount.withLock { $0 }, 1)
         await waitUntil { harness.viewModel.state != .recording }
         XCTAssertNotEqual(harness.viewModel.state, .recording)
+    }
+
+    // MARK: - Cancel during processing
+
+    /// Half a second of audio loud enough to pass the short-speech gate.
+    private static let speechSamples = [Float](
+        repeating: 0.1,
+        count: Int(AudioRecordingService.targetSampleRate / 2)
+    )
+
+    @MainActor
+    func testCompletedDictationInsertsPostProcessedText() async throws {
+        let harness = try makeHarness(recordedSamples: Self.speechSamples)
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        harness.fireStopHotkey()
+
+        await waitUntil { harness.pasteCount.withLock { $0 } > 0 }
+        XCTAssertEqual(harness.pasteCount.withLock { $0 }, 1)
+        XCTAssertEqual(harness.recentTranscriptionStore.sessionEntries.count, 1)
+    }
+
+    @MainActor
+    func testCancelDuringPostProcessingDoesNotInsertText() async throws {
+        let processor = SuspendingPostProcessor()
+        let harness = try makeHarness(
+            recordedSamples: Self.speechSamples,
+            postProcessors: [processor]
+        )
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        harness.fireStopHotkey()
+        await waitUntil { processor.hasStarted }
+        XCTAssertEqual(harness.viewModel.state, .processing)
+
+        // Esc twice: arm the warning, then cancel. The processor's sleep throws
+        // CancellationError, which the pipeline swallows and returns normally.
+        harness.viewModel.handleCancelHotkey()
+        harness.viewModel.handleCancelHotkey()
+        await waitUntil { processor.hasFinished }
+
+        // Give an (incorrect) insertion a chance to surface.
+        await waitUntil(timeout: 0.5) { harness.pasteCount.withLock { $0 } > 0 }
+        XCTAssertEqual(harness.pasteCount.withLock { $0 }, 0, "a cancelled dictation must not paste")
+        XCTAssertTrue(harness.recentTranscriptionStore.sessionEntries.isEmpty)
+        XCTAssertTrue(harness.historyService.records.isEmpty)
+    }
+}
+
+/// Suspends in `process` until the surrounding task is cancelled, the way a
+/// slow post-processor would be interrupted by Esc.
+private final class SuspendingPostProcessor: TextPostProcessor, Sendable {
+    let id = "test.suspending"
+    let displayName = "Suspending"
+    let priority = 300
+
+    private let state = OSAllocatedUnfairLock(initialState: (started: false, finished: false))
+
+    var hasStarted: Bool { state.withLock { $0.started } }
+    var hasFinished: Bool { state.withLock { $0.finished } }
+
+    func process(_ text: String, context: PostProcessingContext) async throws -> String {
+        state.withLock { $0.started = true }
+        defer { state.withLock { $0.finished = true } }
+        try await Task.sleep(for: .seconds(10))
+        return text
     }
 }

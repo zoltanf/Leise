@@ -1234,6 +1234,9 @@ final class DictationViewModel: ObservableObject {
                         normalizeNumbers: self.effectiveNumberNormalizationOverride
                     )
                 }
+                // Esc during post-processing: the pipeline swallows step errors
+                // (including CancellationError) and returns normally.
+                guard !Task.isCancelled else { return }
                 text = ppResult.text
                 logger.info("Stop timing: post-processing done elapsedMs=\(stopElapsedMs(), privacy: .public)")
                 let transcriptionID = sessionID ?? UUID()
@@ -1266,6 +1269,10 @@ final class DictationViewModel: ObservableObject {
                     )
                 }
                 logger.info("Stop timing: text inserted elapsedMs=\(stopElapsedMs(), privacy: .public)")
+                // Cancelled mid-insertion: the paste can't be undone, but
+                // cancelCurrentOperation() already owns the feedback, session and
+                // recovery recording, so don't record success over it.
+                guard !Task.isCancelled else { return }
                 let insertionFailed = insertionResult
                     == .pasted(verification: .unverified(.focusedTextUnchanged))
                 if case .pasted(.unverified(let reason)) = insertionResult {
