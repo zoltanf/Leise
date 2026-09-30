@@ -289,3 +289,66 @@ final class AudioRecorderViewModelTests: XCTestCase {
         return directory
     }
 }
+
+final class RecordingReminderPolicyTests: XCTestCase {
+    private let start = Date(timeIntervalSinceReferenceDate: 0)
+    private let loud: Float = 0.3
+    private let quiet: Float = 0.01
+
+    private func at(_ seconds: TimeInterval) -> Date {
+        start.addingTimeInterval(seconds)
+    }
+
+    func testRemindsAfterAMinuteOfSilence() {
+        var policy = RecordingReminderPolicy(startedAt: start)
+        policy.recordLevel(quiet, at: at(30))
+
+        XCTAssertNil(policy.reminderDue(at: at(59)))
+        XCTAssertEqual(policy.reminderDue(at: at(60)), .silence)
+    }
+
+    func testSoundPostponesTheSilenceReminder() {
+        var policy = RecordingReminderPolicy(startedAt: start)
+        policy.recordLevel(loud, at: at(50))
+
+        XCTAssertNil(policy.reminderDue(at: at(100)))
+        XCTAssertEqual(policy.reminderDue(at: at(110)), .silence)
+    }
+
+    func testContinuedSilenceRemindsEveryThirtyMinutesAfterTheFirstReminder() {
+        var policy = RecordingReminderPolicy(startedAt: start)
+        XCTAssertEqual(policy.reminderDue(at: at(60)), .silence)
+
+        XCTAssertNil(policy.reminderDue(at: at(61)))
+        XCTAssertNil(policy.reminderDue(at: at(60 + 29 * 60)))
+        XCTAssertEqual(policy.reminderDue(at: at(60 + 30 * 60)), .periodic)
+        XCTAssertNil(policy.reminderDue(at: at(60 + 45 * 60)))
+        XCTAssertEqual(policy.reminderDue(at: at(60 + 60 * 60)), .periodic)
+    }
+
+    func testOngoingSoundStillRemindsEveryThirtyMinutes() {
+        var policy = RecordingReminderPolicy(startedAt: start)
+        for second in stride(from: 0.0, through: 3600, by: 5) {
+            policy.recordLevel(loud, at: at(second))
+        }
+
+        XCTAssertNil(policy.reminderDue(at: at(29 * 60)))
+        XCTAssertEqual(policy.reminderDue(at: at(30 * 60)), .periodic)
+        XCTAssertNil(policy.reminderDue(at: at(59 * 60)))
+        XCTAssertEqual(policy.reminderDue(at: at(60 * 60)), .periodic)
+    }
+
+    func testNewSilentStretchRemindsAgainAfterTheSpacing() {
+        var policy = RecordingReminderPolicy(startedAt: start)
+        XCTAssertEqual(policy.reminderDue(at: at(60)), .silence)
+
+        // A short noise shortly after the first reminder must not re-trigger it.
+        policy.recordLevel(loud, at: at(120))
+        XCTAssertNil(policy.reminderDue(at: at(200)))
+
+        // Sound until minute 15, then silence: remind once that stretch hits a minute.
+        policy.recordLevel(loud, at: at(15 * 60))
+        XCTAssertNil(policy.reminderDue(at: at(15 * 60 + 59)))
+        XCTAssertEqual(policy.reminderDue(at: at(16 * 60)), .silence)
+    }
+}

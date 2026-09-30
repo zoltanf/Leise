@@ -9252,6 +9252,22 @@
         }
       }
     },
+    "Leise is still recording" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leise nimmt noch auf"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leiseはまだ録音中です"
+          }
+        }
+      }
+    },
     "Leise learns confident corrections after direct insertion, without asking for every edit." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -11498,6 +11514,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "スニペットがまだありません"
+          }
+        }
+      }
+    },
+    "No sound for a minute. Do you want to stop the recording?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seit einer Minute ist nichts zu hören. Möchtest du die Aufnahme stoppen?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1分間音が検出されていません。録音を停止しますか？"
           }
         }
       }
@@ -14127,6 +14159,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "追加のキーが押されたため録音を破棄しました"
+          }
+        }
+      }
+    },
+    "Recording for %@. Do you want to stop it?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Aufnahme läuft seit %1$@. Möchtest du sie stoppen?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音開始から%1$@経過しました。停止しますか？"
           }
         }
       }

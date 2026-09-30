@@ -41,12 +41,29 @@ enum DockIconVisibility {
     }
 }
 
-enum MenuBarIconState {
-    static func isRecordingActive(
+enum MenuBarIconState: Equatable {
+    case idle
+    case dictating
+    case recording
+
+    static func resolve(
         dictationState: DictationViewModel.State,
         recorderState: AudioRecorderViewModel.RecorderState
-    ) -> Bool {
-        dictationState == .recording || recorderState == .recording
+    ) -> MenuBarIconState {
+        // The recorder runs long sessions, so it wins when both are active.
+        if recorderState == .recording { return .recording }
+        if dictationState == .recording { return .dictating }
+        return .idle
+    }
+
+    /// Orange while dictating, red while the recorder captures; idle keeps
+    /// the template artwork so it follows the menu bar appearance.
+    var tintColor: NSColor? {
+        switch self {
+        case .idle: nil
+        case .dictating: .systemOrange
+        case .recording: .systemRed
+        }
     }
 }
 
@@ -59,21 +76,21 @@ private struct MenuBarExtraLabel: View {
         AppConstants.isDevelopment ? "Leise Dev" : "Leise"
     }
 
-    private var isRecordingActive: Bool {
-        MenuBarIconState.isRecordingActive(
+    private var iconState: MenuBarIconState {
+        MenuBarIconState.resolve(
             dictationState: dictation.state,
             recorderState: recorder.state
         )
     }
 
     var body: some View {
-        Image(nsImage: MenuBarLogoMarkImage.image(isRecordingActive: isRecordingActive))
+        Image(nsImage: MenuBarLogoMarkImage.image(for: iconState))
             .resizable()
-            .renderingMode(isRecordingActive ? .original : .template)
+            .renderingMode(iconState == .idle ? .template : .original)
             .frame(width: 18, height: 18)
             .accessibilityLabel(Text(verbatim: title))
             .accessibilityValue(
-                isRecordingActive
+                iconState != .idle
                     ? Text(String(localized: "Recording..."))
                     : Text(String(localized: "Idle"))
             )
@@ -103,12 +120,12 @@ enum MenuBarLogoMarkImage {
     static let size = CGSize(width: 18, height: 18)
     private static let relativeBarHeights: [CGFloat] = [0.5, 0.75, 1.0, 0.75, 0.5]
 
-    static func image(isRecordingActive: Bool) -> NSImage {
+    static func image(for state: MenuBarIconState) -> NSImage {
         let image = NSImage(size: size)
         image.lockFocus()
 
         NSGraphicsContext.current?.shouldAntialias = true
-        (isRecordingActive ? NSColor.systemRed : NSColor.black).setFill()
+        (state.tintColor ?? NSColor.black).setFill()
 
         for rect in barRects(in: CGRect(origin: .zero, size: size)) {
             NSBezierPath(
@@ -119,7 +136,7 @@ enum MenuBarLogoMarkImage {
         }
 
         image.unlockFocus()
-        image.isTemplate = !isRecordingActive
+        image.isTemplate = state.tintColor == nil
         return image
     }
 
@@ -350,6 +367,7 @@ final class ManagedAppWindowOpener {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     private var indicatorCoordinator: IndicatorCoordinator?
+    private var recordingReminderService: RecordingReminderService?
     private var menuBarIconObserver: NSKeyValueObservation?
     private var dockIconBehaviorObserver: NSKeyValueObservation?
     private var appActivationObserver: NSObjectProtocol?
@@ -401,6 +419,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         let coordinator = IndicatorCoordinator()
         coordinator.startObserving()
         indicatorCoordinator = coordinator
+
+        let reminderService = RecordingReminderService(recorder: ServiceContainer.shared.audioRecorderViewModel)
+        reminderService.startObserving()
+        recordingReminderService = reminderService
 
         ServiceContainer.shared.hotkeyService.onRecentTranscriptionsToggle = {
             ServiceContainer.shared.dictationViewModel.triggerRecentTranscriptionsPalette()

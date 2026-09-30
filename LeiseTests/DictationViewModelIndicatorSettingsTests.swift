@@ -908,40 +908,45 @@ final class MenuBarGroupingTests: XCTestCase {
 }
 
 final class MenuBarIconStateTests: XCTestCase {
-    func testRecordingIndicatorIsActiveDuringDictationRecording() {
-        XCTAssertTrue(
-            MenuBarIconState.isRecordingActive(
-                dictationState: .recording,
-                recorderState: .idle
-            )
+    func testIconShowsDictatingDuringDictationRecording() {
+        XCTAssertEqual(
+            MenuBarIconState.resolve(dictationState: .recording, recorderState: .idle),
+            .dictating
         )
     }
 
-    func testRecordingIndicatorIsActiveDuringRecorderRecording() {
-        XCTAssertTrue(
-            MenuBarIconState.isRecordingActive(
-                dictationState: .idle,
-                recorderState: .recording
-            )
+    func testIconShowsRecordingDuringRecorderRecording() {
+        XCTAssertEqual(
+            MenuBarIconState.resolve(dictationState: .idle, recorderState: .recording),
+            .recording
         )
     }
 
-    func testRecordingIndicatorIsInactiveWhileRecorderFinalizes() {
-        XCTAssertFalse(
-            MenuBarIconState.isRecordingActive(
-                dictationState: .idle,
-                recorderState: .finalizing
-            )
+    func testRecorderWinsWhenDictationAndRecorderAreBothActive() {
+        XCTAssertEqual(
+            MenuBarIconState.resolve(dictationState: .recording, recorderState: .recording),
+            .recording
         )
     }
 
-    func testRecordingIndicatorIsInactiveWithoutActiveRecording() {
-        XCTAssertFalse(
-            MenuBarIconState.isRecordingActive(
-                dictationState: .processing,
-                recorderState: .idle
-            )
+    func testIconIsIdleWhileRecorderFinalizes() {
+        XCTAssertEqual(
+            MenuBarIconState.resolve(dictationState: .idle, recorderState: .finalizing),
+            .idle
         )
+    }
+
+    func testIconIsIdleWithoutActiveRecording() {
+        XCTAssertEqual(
+            MenuBarIconState.resolve(dictationState: .processing, recorderState: .idle),
+            .idle
+        )
+    }
+
+    func testDictationIsOrangeAndRecordingIsRed() {
+        XCTAssertNil(MenuBarIconState.idle.tintColor)
+        XCTAssertEqual(MenuBarIconState.dictating.tintColor, .systemOrange)
+        XCTAssertEqual(MenuBarIconState.recording.tintColor, .systemRed)
     }
 }
 
@@ -1085,13 +1090,16 @@ final class MenuBarLogoMarkImageTests: XCTestCase {
         }
     }
 
-    func testIdleImageIsTemplateAndRecordingImageIsOriginalRedArtwork() {
-        let idleImage = MenuBarLogoMarkImage.image(isRecordingActive: false)
-        let recordingImage = MenuBarLogoMarkImage.image(isRecordingActive: true)
+    func testIdleImageIsTemplateAndActiveImagesAreOriginalColoredArtwork() {
+        let idleImage = MenuBarLogoMarkImage.image(for: .idle)
+        let dictatingImage = MenuBarLogoMarkImage.image(for: .dictating)
+        let recordingImage = MenuBarLogoMarkImage.image(for: .recording)
 
         XCTAssertEqual(idleImage.size, MenuBarLogoMarkImage.size)
+        XCTAssertEqual(dictatingImage.size, MenuBarLogoMarkImage.size)
         XCTAssertEqual(recordingImage.size, MenuBarLogoMarkImage.size)
         XCTAssertTrue(idleImage.isTemplate)
+        XCTAssertFalse(dictatingImage.isTemplate)
         XCTAssertFalse(recordingImage.isTemplate)
     }
 }
