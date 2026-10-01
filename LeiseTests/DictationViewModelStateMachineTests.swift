@@ -79,6 +79,12 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         textInsertionService.pasteboardProvider = { pasteboard }
         textInsertionService.accessibilityGrantedOverride = true
         textInsertionService.captureActiveAppOverride = { (name: "Test", bundleId: "com.leise.tests", url: nil) }
+        // The user's persisted preserve-clipboard / auto-enter settings must
+        // not reach the real focused app: no AX insertion, no synthetic Return.
+        textInsertionService.focusedTextElementOverride = { nil }
+        textInsertionService.focusedTextFieldOverride = { false }
+        textInsertionService.selectedTextOverride = { nil }
+        textInsertionService.returnSimulatorOverride = {}
         textInsertionService.pasteSimulatorOverride = { pasteCount.withLock { $0 += 1 } }
         let historyService = HistoryService(appSupportDirectory: appSupportDirectory)
         let recentTranscriptionStore = RecentTranscriptionStore()
@@ -459,6 +465,7 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         harness.viewModel.handleCancelHotkey()
         harness.viewModel.handleCancelHotkey()
         await waitUntil { processor.hasFinished }
+        XCTAssertTrue(processor.hasFinished, "cancellation must reach the post-processor")
 
         // Give an (incorrect) insertion a chance to surface.
         await waitUntil(timeout: 0.5) { harness.pasteCount.withLock { $0 } > 0 }
