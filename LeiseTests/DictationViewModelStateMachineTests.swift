@@ -13,11 +13,14 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         let hotkeyService: HotkeyService
         let recordingService: AudioRecordingService
         let textInsertionService: TextInsertionService
+        let historyService: HistoryService
+        let recentTranscriptionStore: RecentTranscriptionStore
         let engine: TestTranscriptionEngine
         let startCallCount: OSAllocatedUnfairLock<Int>
         let stopCallCount: OSAllocatedUnfairLock<Int>
         /// Engine calls in order: "start", "stop-begin", "stop-end".
         let engineEvents: OSAllocatedUnfairLock<[String]>
+        let pasteCount: OSAllocatedUnfairLock<Int>
 
         func fireStartHotkey() {
             hotkeyService.onDictationStart?(DispatchTime.now().uptimeNanoseconds)
@@ -34,7 +37,8 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         microphonePermission: Bool = true,
         startDelay: TimeInterval = 0,
         stopDelay: TimeInterval = 0,
-        stopSamples: [Float] = []
+        stopSamples: [Float] = [],
+        postProcessors: [any TextPostProcessor] = []
     ) throws -> Harness {
         let appSupportDirectory = try TestSupport.makeTemporaryDirectory()
         addTeardownBlock {
@@ -44,6 +48,7 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         let startCallCount = OSAllocatedUnfairLock(initialState: 0)
         let stopCallCount = OSAllocatedUnfairLock(initialState: 0)
         let engineEvents = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let pasteCount = OSAllocatedUnfairLock(initialState: 0)
 
         let recordingService = AudioRecordingService()
         recordingService.hasMicrophonePermissionOverride = microphonePermission
@@ -74,7 +79,15 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         textInsertionService.pasteboardProvider = { pasteboard }
         textInsertionService.accessibilityGrantedOverride = true
         textInsertionService.captureActiveAppOverride = { (name: "Test", bundleId: "com.leise.tests", url: nil) }
-        textInsertionService.pasteSimulatorOverride = {}
+        // The user's persisted preserve-clipboard / auto-enter settings must
+        // not reach the real focused app: no AX insertion, no synthetic Return.
+        textInsertionService.focusedTextElementOverride = { nil }
+        textInsertionService.focusedTextFieldOverride = { false }
+        textInsertionService.selectedTextOverride = { nil }
+        textInsertionService.returnSimulatorOverride = {}
+        textInsertionService.pasteSimulatorOverride = { pasteCount.withLock { $0 += 1 } }
+        let historyService = HistoryService(appSupportDirectory: appSupportDirectory)
+        let recentTranscriptionStore = RecentTranscriptionStore()
         let hotkeyService = HotkeyService()
         let punctuationProfileStore = DictationPunctuationProfileStore(
             defaults: UserDefaults(suiteName: UUID().uuidString)!,
@@ -88,8 +101,8 @@ final class DictationViewModelStateMachineTests: XCTestCase {
             hotkeyService: hotkeyService,
             modelManager: modelManager,
             settingsViewModel: SettingsViewModel(modelManager: modelManager),
-            historyService: HistoryService(appSupportDirectory: appSupportDirectory),
-            recentTranscriptionStore: RecentTranscriptionStore(),
+            historyService: historyService,
+            recentTranscriptionStore: recentTranscriptionStore,
             profileService: ProfileService(appSupportDirectory: appSupportDirectory),
             audioDuckingService: AudioDuckingService(),
             dictionaryService: DictionaryService(appSupportDirectory: appSupportDirectory),
@@ -104,7 +117,8 @@ final class DictationViewModelStateMachineTests: XCTestCase {
             speechPunctuationService: SpeechPunctuationService(rulesLoader: punctuationRulesLoader),
             accessibilityAnnouncementService: AccessibilityAnnouncementService(),
             errorLogService: ErrorLogService(appSupportDirectory: appSupportDirectory),
-            mediaPlaybackService: MediaPlaybackService(startListening: false)
+            mediaPlaybackService: MediaPlaybackService(startListening: false),
+            postProcessors: postProcessors
         )
 
         return Harness(
@@ -112,10 +126,13 @@ final class DictationViewModelStateMachineTests: XCTestCase {
             hotkeyService: hotkeyService,
             recordingService: recordingService,
             textInsertionService: textInsertionService,
+            historyService: historyService,
+            recentTranscriptionStore: recentTranscriptionStore,
             engine: engine,
             startCallCount: startCallCount,
             stopCallCount: stopCallCount,
-            engineEvents: engineEvents
+            engineEvents: engineEvents,
+            pasteCount: pasteCount
         )
     }
 
@@ -412,5 +429,68 @@ final class DictationViewModelStateMachineTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(200))
 
         XCTAssertTrue(harness.engine.requests.isEmpty, "the interrupted hold must not be transcribed")
+    }
+
+    // MARK: - Cancel during processing
+
+    @MainActor
+    func testCompletedDictationInsertsPostProcessedText() async throws {
+        let harness = try makeHarness(stopSamples: Self.speechSamples)
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        harness.fireStopHotkey()
+
+        await waitUntil { harness.pasteCount.withLock { $0 } > 0 }
+        XCTAssertEqual(harness.pasteCount.withLock { $0 }, 1)
+        XCTAssertEqual(harness.recentTranscriptionStore.sessionEntries.count, 1)
+    }
+
+    @MainActor
+    func testCancelDuringPostProcessingDoesNotInsertText() async throws {
+        let processor = SuspendingPostProcessor()
+        let harness = try makeHarness(
+            stopSamples: Self.speechSamples,
+            postProcessors: [processor]
+        )
+
+        harness.fireStartHotkey()
+        await waitUntil { harness.viewModel.state == .recording }
+        harness.fireStopHotkey()
+        await waitUntil { processor.hasStarted }
+        XCTAssertEqual(harness.viewModel.state, .processing)
+
+        // Esc twice: arm the warning, then cancel. The processor's sleep throws
+        // CancellationError, which the pipeline swallows and returns normally.
+        harness.viewModel.handleCancelHotkey()
+        harness.viewModel.handleCancelHotkey()
+        await waitUntil { processor.hasFinished }
+        XCTAssertTrue(processor.hasFinished, "cancellation must reach the post-processor")
+
+        // Give an (incorrect) insertion a chance to surface.
+        await waitUntil(timeout: 0.5) { harness.pasteCount.withLock { $0 } > 0 }
+        XCTAssertEqual(harness.pasteCount.withLock { $0 }, 0, "a cancelled dictation must not paste")
+        XCTAssertTrue(harness.recentTranscriptionStore.sessionEntries.isEmpty)
+        XCTAssertTrue(harness.historyService.records.isEmpty)
+    }
+}
+
+/// Suspends in `process` until the surrounding task is cancelled, the way a
+/// slow post-processor would be interrupted by Esc.
+private final class SuspendingPostProcessor: TextPostProcessor, Sendable {
+    let id = "test.suspending"
+    let displayName = "Suspending"
+    let priority = 300
+
+    private let state = OSAllocatedUnfairLock(initialState: (started: false, finished: false))
+
+    var hasStarted: Bool { state.withLock { $0.started } }
+    var hasFinished: Bool { state.withLock { $0.finished } }
+
+    func process(_ text: String, context: PostProcessingContext) async throws -> String {
+        state.withLock { $0.started = true }
+        defer { state.withLock { $0.finished = true } }
+        try await Task.sleep(for: .seconds(10))
+        return text
     }
 }

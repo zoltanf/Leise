@@ -1321,6 +1321,9 @@ final class DictationViewModel: ObservableObject {
                         normalizeNumbers: self.effectiveNumberNormalizationOverride
                     )
                 }
+                // Esc during post-processing: the pipeline swallows step errors
+                // (including CancellationError) and returns normally.
+                guard !Task.isCancelled else { return }
                 text = ppResult.text
                 logger.info("Stop timing: post-processing done elapsedMs=\(stopElapsedMs(), privacy: .public)")
                 let transcriptionID = sessionID ?? UUID()
