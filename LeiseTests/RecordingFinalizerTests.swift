@@ -83,6 +83,22 @@ final class RecordingFinalizerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
     }
 
+    func testUnreadableOutputPreservesTheRawWAVEvenForAVeryShortRecording() async throws {
+        // Shorter than the duration tolerance, so only the readability check can catch it.
+        let mic = try makeWAV("mic-track.wav", seconds: 0.3, sampleRate: 48_000, channels: 1)
+        let output = directory.appendingPathComponent("Recording.m4a")
+
+        let outcome = await RecordingFinalizer.finalize(
+            request(mic: mic, output: output, format: .m4a),
+            renderer: { request, _ in
+                try Data(repeating: 0, count: 2_048).write(to: request.outputURL)
+            }
+        )
+
+        XCTAssertEqual(outcome, .preservedRawAudio(directory.appendingPathComponent("Recording.wav")))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+    }
+
     func testLowSampleRateMicEncodesToM4A() async throws {
         // Bluetooth HFP microphones capture at 16 kHz, where 192 kbps AAC is rejected.
         let mic = try makeWAV("mic.wav", seconds: 3, sampleRate: 16_000, channels: 1)
