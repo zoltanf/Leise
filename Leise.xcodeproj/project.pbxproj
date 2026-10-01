@@ -1239,6 +1239,13 @@
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
+		<key>AA00000000000000000904</key>
+		<dict>
+			<key>fileRef</key>
+			<string>BB00000000000000000904</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
 		<key>AA00000000000000000901</key>
 		<dict>
 			<key>fileRef</key>
@@ -2358,6 +2365,17 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
+		<key>BB00000000000000000904</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>RecordingReminderService.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>BB00000000000000000901</key>
 		<dict>
 			<key>isa</key>
@@ -3207,6 +3225,7 @@
 				<string>C1F000000000000000000001</string>
 				<string>BB00000000000000000086</string>
 				<string>BB00000000000000000102</string>
+				<string>BB00000000000000000904</string>
 				<string>BB00000000000000000320</string>
 				<string>BB00000000000000000125</string>
 				<string>BB00000000000000000126</string>
@@ -3961,6 +3980,7 @@
 				<string>AA00000000000000000082</string>
 				<string>AA00000000000000000083</string>
 				<string>AA00000000000000000086</string>
+				<string>AA00000000000000000904</string>
 				<string>AA00000000000000000090</string>
 				<string>AA00000000000000000091</string>
 				<string>AA00000000000000000092</string>
