@@ -426,11 +426,31 @@ final class TextInsertionService {
         )
     }
 
+    /// Once started, insertion runs to completion even if the calling task is
+    /// cancelled: a cancelled sleep would restore the clipboard while the target
+    /// app is still handling the synthesized Cmd+V, pasting the user's previous
+    /// clipboard instead of the dictated text.
     func insertText(
         _ text: String,
         preserveClipboard: Bool = false,
         autoEnter: Bool = false,
         outputFormat: String? = nil
+    ) async throws -> InsertionResult {
+        try await Task {
+            try await performInsertion(
+                text,
+                preserveClipboard: preserveClipboard,
+                autoEnter: autoEnter,
+                outputFormat: outputFormat
+            )
+        }.value
+    }
+
+    private func performInsertion(
+        _ text: String,
+        preserveClipboard: Bool,
+        autoEnter: Bool,
+        outputFormat: String?
     ) async throws -> InsertionResult {
         guard isAccessibilityGranted else {
             throw TextInsertionError.accessibilityNotGranted
