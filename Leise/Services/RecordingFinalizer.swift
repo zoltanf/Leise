@@ -48,6 +48,7 @@ enum RecordingFinalizer {
         case cannotAllocateBuffer
         case cannotCreateConverter
         case truncatedOutput(actual: TimeInterval, expected: TimeInterval)
+        case unreadableOutput
         case stalled
 
         var errorDescription: String? {
@@ -58,6 +59,7 @@ enum RecordingFinalizer {
             case .cannotCreateConverter: "Cannot create audio converter"
             case .truncatedOutput(let actual, let expected):
                 "Output holds \(actual)s of \(expected)s"
+            case .unreadableOutput: "Output file cannot be read back"
             case .stalled: "Encoder made no progress"
             }
         }
@@ -342,11 +344,6 @@ enum RecordingFinalizer {
 
     // MARK: - Verification
 
-    private static func duration(of url: URL) -> TimeInterval {
-        guard let file = try? AVAudioFile(forReading: url) else { return 0 }
-        return Double(file.length) / file.fileFormat.sampleRate
-    }
-
     /// The longest track's duration, or nil when any track cannot be opened
     /// (so an unreadable track is preserved rather than treated as empty).
     private static func expectedDuration(of request: Request) -> TimeInterval? {
@@ -358,8 +355,13 @@ enum RecordingFinalizer {
         return longest
     }
 
+    /// The output must open and hold audio before the tolerance applies, so a
+    /// missing or corrupt file never passes for a sub-tolerance recording.
     private static func verifyOutput(of request: Request, expectedDuration: TimeInterval) throws {
-        let actual = duration(of: request.outputURL)
+        guard let output = try? AVAudioFile(forReading: request.outputURL), output.length > 0 else {
+            throw FinalizationError.unreadableOutput
+        }
+        let actual = Double(output.length) / output.fileFormat.sampleRate
         guard actual + durationTolerance >= expectedDuration else {
             throw FinalizationError.truncatedOutput(actual: actual, expected: expectedDuration)
         }

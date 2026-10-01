@@ -521,8 +521,10 @@ final class AudioRecorderViewModel: ObservableObject {
     }
 
     /// Moves recorder temp tracks left behind by a crash or a stalled stop
-    /// into the recordings folder. Called once at launch.
-    func recoverInterruptedRecordings() async {
+    /// into the recordings folder. Called at launch. Tracks written in the
+    /// last two minutes are skipped in case another instance still owns them,
+    /// so a relaunch right after a crash gets a second pass once they have aged.
+    func recoverInterruptedRecordings(retryDelay: Duration? = .seconds(150)) async {
         guard state == .idle else { return }
         let recordingsDirectory = recorderService.recordingsDirectory
         let recovered = await RecordingFinalizer.onBackgroundQueue {
@@ -531,9 +533,16 @@ final class AudioRecorderViewModel: ObservableObject {
                 to: recordingsDirectory
             )
         }
-        guard !recovered.isEmpty else { return }
-        errorMessage = String(localized: "Audio from an interrupted recording was recovered into the recordings folder.")
-        loadRecordings()
+        if !recovered.isEmpty {
+            errorMessage = String(localized: "Audio from an interrupted recording was recovered into the recordings folder.")
+            loadRecordings()
+        }
+        if let retryDelay {
+            Task { [weak self] in
+                try? await Task.sleep(for: retryDelay)
+                await self?.recoverInterruptedRecordings(retryDelay: nil)
+            }
+        }
     }
 
     func deleteRecording(_ item: RecordingItem) {
