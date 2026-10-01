@@ -172,11 +172,17 @@ final class RecordingReminderService: NSObject {
 
         // A fixed identifier replaces the previous reminder instead of stacking them.
         let request = UNNotificationRequest(identifier: Self.notificationIdentifier, content: content, trigger: nil)
-        Task {
+        Task { [weak self] in
+            let center = UNUserNotificationCenter.current()
             do {
-                try await UNUserNotificationCenter.current().add(request)
+                try await center.add(request)
             } catch {
                 logger.error("Recording reminder failed: \(error.localizedDescription, privacy: .public)")
+            }
+            // The recording may have stopped while the request was in flight;
+            // stopTracking() ran its removal before this one was delivered.
+            if self?.policy == nil {
+                center.removeDeliveredNotifications(withIdentifiers: [Self.notificationIdentifier])
             }
         }
     }
