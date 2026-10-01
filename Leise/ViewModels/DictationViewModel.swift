@@ -47,7 +47,12 @@ final class DictationViewModel: ObservableObject {
     }
 
     @Published var state: State = .idle {
-        didSet { clearCancelWarningIfStateNoLongerMatches() }
+        didSet {
+            clearCancelWarningIfStateNoLongerMatches()
+            if oldValue == .processing, state != .processing {
+                runPendingStartAfterProcessing()
+            }
+        }
     }
     @Published var audioLevel: Float = 0
     @Published var recordingDuration: TimeInterval = 0
@@ -173,6 +178,9 @@ final class DictationViewModel: ObservableObject {
     private var stopFinalizationTask: Task<Void, Never>?
     private var errorResetTask: Task<Void, Never>?
     private var insertingResetTask: Task<Void, Never>?
+    /// Aborted or cancelled sessions whose engine teardown is still running.
+    /// The next start waits (bounded) for them so the two never overlap.
+    private var inFlightRecordingTeardowns: Set<UUID> = []
     @Published private var cancelWarningTarget: CancelWarningTarget?
     private var urlResolutionTask: Task<Void, Never>?
     private var metadataCaptureTask: Task<Void, Never>?
@@ -195,6 +203,13 @@ final class DictationViewModel: ObservableObject {
     private var isStartInFlight = false
     private var pendingStopRequestedDuringStart = false
     private var pendingCancelRequestedDuringStart = false
+    private struct PendingStart {
+        let forcedProfileId: UUID?
+        let sessionID: UUID
+    }
+    /// A start requested while the previous dictation is still processing. It
+    /// runs as soon as that processing ends instead of being dropped.
+    private var pendingStartAfterProcessing: PendingStart?
     private var activeDictationSessionID: UUID?
     private var pendingPushToTalkDiscardMessage: String?
     private var recordingStartCuePending = false
@@ -331,7 +346,12 @@ final class DictationViewModel: ObservableObject {
         }
 
         recentTranscriptionPaletteHandler.onShowNotchFeedback = { [weak self] message, icon, duration, isError, category in
-            self?.showNotchFeedback(message: message, icon: icon, duration: duration, isError: isError, errorCategory: category ?? "general")
+            guard let self else { return }
+            // Feedback takes over `state` (.inserting plus a reset timer); a
+            // palette insert that finishes after a dictation began must not
+            // clobber that dictation's state.
+            guard !isStartInFlight, state != .recording, state != .processing else { return }
+            showNotchFeedback(message: message, icon: icon, duration: duration, isError: isError, errorCategory: category ?? "general")
         }
         recentTranscriptionPaletteHandler.getPreserveClipboard = { [weak self] in
             self?.preserveClipboard ?? false
@@ -553,16 +573,39 @@ final class DictationViewModel: ObservableObject {
         restoreRecordingSideEffects()
         streamingHandler.stop()
         stopRecordingTimer()
-        Task {
+        trackRecordingTeardown(Task {
             _ = await audioRecordingService.stopRecording(policy: .immediate)
             if preserveRecoveryAudio {
                 audioRecordingService.preserveActiveRecoveryRecording()
             } else {
                 audioRecordingService.discardActiveRecoveryRecording()
             }
-        }
+        })
         cancelActiveDictationSessionIfNeeded(message: sessionMessage)
         hotkeyService.cancelDictation()
+    }
+
+    private func trackRecordingTeardown(_ teardown: Task<Void, Never>) {
+        let id = UUID()
+        inFlightRecordingTeardowns.insert(id)
+        Task { [weak self] in
+            await teardown.value
+            self?.inFlightRecordingTeardowns.remove(id)
+        }
+    }
+
+    /// Bounded so a wedged audio device cannot block every later dictation.
+    private func waitForRecordingTeardown(timeout: Duration = .seconds(3)) async {
+        let deadline = ContinuousClock.now + timeout
+        while !inFlightRecordingTeardowns.isEmpty {
+            guard ContinuousClock.now < deadline else {
+                logger.warning("Starting recording while a previous session's engine teardown is still running")
+                // Give up on hung teardowns once; later starts must not pay again.
+                inFlightRecordingTeardowns.removeAll()
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     private func setupBindings() {
@@ -711,7 +754,16 @@ final class DictationViewModel: ObservableObject {
             abortActiveRecordingImmediately(sessionMessage: cancelledMessage)
             showNotchFeedback(message: cancelledMessage, icon: "xmark.circle", duration: 1.5)
         case .processing:
+            if pendingStartAfterProcessing != nil {
+                // The queued start's hotkey is still active; resync it so the
+                // next press starts instead of acting as a phantom stop.
+                pendingStartAfterProcessing = nil
+                hotkeyService.cancelDictation()
+            }
             cancelActiveDictationSessionIfNeeded(message: cancelledMessage)
+            if let stopFinalizationTask {
+                trackRecordingTeardown(stopFinalizationTask)
+            }
             stopFinalizationTask?.cancel()
             stopFinalizationTask = nil
             streamingHandler.stop()
@@ -730,6 +782,20 @@ final class DictationViewModel: ObservableObject {
         sessionID: UUID = UUID(),
         requestUptimeNanoseconds: UInt64 = DispatchTime.now().uptimeNanoseconds
     ) {
+        if state == .processing {
+            // The previous dictation is still being transcribed. Queue the
+            // start instead of dropping it, and leave the hotkey active so its
+            // release still reaches stopDictation().
+            logger.info("startRecording queued: previous dictation still processing")
+            pendingStartAfterProcessing = PendingStart(forcedProfileId: forcedProfileId, sessionID: sessionID)
+            return
+        }
+        if state == .inserting, !isStartInFlight {
+            // `.inserting` only displays feedback for a finished dictation; a
+            // new start replaces it instead of waiting for the display timer.
+            logger.info("startRecording replacing feedback display")
+            resetDictationState()
+        }
         guard state == .idle, !isStartInFlight else {
             logger.warning("startRecording rejected: state=\(String(describing: self.state), privacy: .public), startInFlight=\(self.isStartInFlight, privacy: .public); resetting hotkey state")
             hotkeyService.cancelDictation()
@@ -817,6 +883,9 @@ final class DictationViewModel: ObservableObject {
         initialForcedProfile: Profile?
     ) async {
         let selectedInputUsesBluetooth = resolvedInputSelection.usesBluetoothTransport
+        // A start can now follow an abort or cancel immediately; let that
+        // session finish releasing the engine and its recovery audio first.
+        await waitForRecordingTeardown()
         do {
             let audioStartTimestamp = DispatchTime.now().uptimeNanoseconds
             try await PerformanceMilestones.measure(.audioStart) {
@@ -1034,7 +1103,25 @@ final class DictationViewModel: ObservableObject {
         return trimmed?.isEmpty == false ? trimmed : nil
     }
 
+    private func runPendingStartAfterProcessing() {
+        guard pendingStartAfterProcessing != nil else { return }
+        // Hop once so the finished pipeline completes its synchronous tail
+        // before the next dictation resets shared state.
+        Task { [weak self] in
+            guard let self, let pending = pendingStartAfterProcessing else { return }
+            pendingStartAfterProcessing = nil
+            logger.info("Running dictation start queued during processing")
+            startRecording(forcedProfileId: pending.forcedProfileId, sessionID: pending.sessionID)
+        }
+    }
+
     private func stopDictation() {
+        if pendingStartAfterProcessing != nil {
+            // Released before the queued start could run; nothing was recorded.
+            logger.info("Dropping queued dictation start: hotkey released while previous dictation was processing")
+            pendingStartAfterProcessing = nil
+            return
+        }
         if isStartInFlight {
             // The hotkey was released before the audio engine finished
             // starting; honor the stop as soon as the start completes.
@@ -1234,6 +1321,9 @@ final class DictationViewModel: ObservableObject {
                         normalizeNumbers: self.effectiveNumberNormalizationOverride
                     )
                 }
+                // Esc during post-processing: the pipeline swallows step errors
+                // (including CancellationError) and returns normally.
+                guard !Task.isCancelled else { return }
                 text = ppResult.text
                 logger.info("Stop timing: post-processing done elapsedMs=\(stopElapsedMs(), privacy: .public)")
                 let transcriptionID = sessionID ?? UUID()
@@ -1266,6 +1356,10 @@ final class DictationViewModel: ObservableObject {
                     )
                 }
                 logger.info("Stop timing: text inserted elapsedMs=\(stopElapsedMs(), privacy: .public)")
+                // Cancelled while inserting (insertion swallows cancellation):
+                // the next dictation may already own `state`, so this one must
+                // not show feedback or arm the reset timer.
+                guard !Task.isCancelled else { return }
                 let insertionFailed = insertionResult
                     == .pasted(verification: .unverified(.focusedTextUnchanged))
                 if case .pasted(.unverified(let reason)) = insertionResult {
@@ -1497,7 +1591,12 @@ final class DictationViewModel: ObservableObject {
     }
 
     private func handlePushToTalkInterruption() {
-        guard state == .recording, !isStopInFlight else { return }
+        // Extra keys while the push-to-talk key is held mean a shortcut, not
+        // a dictation; drop a start queued for that hold.
+        pendingStartAfterProcessing = nil
+        // A start still in flight (engine start or teardown wait) is the same
+        // hold; startRecording clears the message before the next one.
+        guard state == .recording || isStartInFlight, !isStopInFlight else { return }
         pendingPushToTalkDiscardMessage = String(localized: "Recording discarded because additional keys were pressed")
     }
 

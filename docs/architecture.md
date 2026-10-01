@@ -51,3 +51,21 @@ first hotkey must apply corrections, profile matching, and durable history
 without a second initialization state. Their editors and term-pack network work
 remain on demand. The final performance report records the resulting startup
 tradeoff.
+
+## Recorder finalization
+
+The recorder captures each source (microphone, system audio) into its own
+temporary WAV in `$TMPDIR` (`mic-<uuid>.wav`, `sys-<uuid>.wav`). On stop,
+`RecordingFinalizer` converts or mixes those tracks into the saved recording:
+
+- audio is read, mixed, and encoded in fixed five-second chunks, so memory
+  stays flat regardless of recording length;
+- the work runs on GCD, not the cooperative pool, and a heartbeat watchdog
+  abandons it if a chunk makes no progress for 30 seconds;
+- the output's duration is checked against the source before the temp tracks
+  are deleted;
+- if encoding fails, stalls, or comes out short, the raw WAV tracks are moved
+  into the recordings folder instead.
+
+At launch, temp tracks left behind by a crash are moved into the recordings
+folder as `Recovered Recording …`.

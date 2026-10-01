@@ -2392,6 +2392,22 @@
         }
       }
     },
+    "Audio from an interrupted recording was recovered into the recordings folder." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio einer unterbrochenen Aufnahme wurde im Aufnahmeordner wiederhergestellt."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中断された録音の音声を録音フォルダに復元しました。"
+          }
+        }
+      }
+    },
     "Aus" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -17417,6 +17433,22 @@
         }
       }
     },
+    "The recording could not be converted, so its original audio was saved as WAV." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Aufnahme konnte nicht konvertiert werden, daher wurde das Originalaudio als WAV gesichert."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を変換できなかったため、元の音声をWAVとして保存しました。"
+          }
+        }
+      }
+    },
     "The recording could not be saved." : {
       "localizations" : {
         "de" : {
@@ -17429,6 +17461,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "録音を保存できませんでした。"
+          }
+        }
+      }
+    },
+    "The recording could not be saved. Its audio will be recovered the next time Leise starts." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Aufnahme konnte nicht gesichert werden. Ihr Audio wird beim nächsten Start von Leise wiederhergestellt."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を保存できませんでした。音声は次回Leiseを起動したときに復元されます。"
           }
         }
       }

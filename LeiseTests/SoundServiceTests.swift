@@ -33,6 +33,22 @@ final class SoundServiceTests: XCTestCase {
         )
     }
 
+    func testCatalogLookupStopsAtFirstSupportedLanguageLikeRuntime() throws {
+        // English is the source language: it wins even with a translated language later in the list.
+        XCTAssertEqual(
+            try TestSupport.localizedCatalogValue(
+                for: "Recording started",
+                preferredLanguages: ["en-US", "sr-Latn-AT", "de-AT"]
+            ),
+            "Recording started"
+        )
+        // Unsupported languages are skipped until one the bundle supports.
+        XCTAssertEqual(
+            try TestSupport.localizedCatalogValue(for: "Recording started", preferredLanguages: ["sr-Latn-AT", "de-AT"]),
+            "Aufnahme gestartet"
+        )
+    }
+
     func testRecorderEchoHandlingLabelsUseEnglishSourceStringsWithGermanTranslations() throws {
         XCTAssertEqual(
             try TestSupport.localizedCatalogValue(for: "Aggressive", preferredLanguages: ["en-US"]),

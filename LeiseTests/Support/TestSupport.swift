@@ -72,26 +72,34 @@ enum TestSupport {
         )
     }
 
-    static func localizedCatalogValue(for key: String, preferredLanguages: [String]) throws -> String {
-        let localizations = try catalogLocalizations(for: key)
-
-        for language in normalizedLanguageCandidates(from: preferredLanguages) {
-            guard let languageEntry = localizations[language] as? [String: Any],
-                  let stringUnit = languageEntry["stringUnit"] as? [String: Any],
-                  let value = stringUnit["value"] as? String else {
-                continue
-            }
-            return value
-        }
-
-        return key
+    /// Resolves the way `String(localized:)` does at runtime: the first
+    /// preferred language the bundle supports wins, and the catalog's source
+    /// language (or a language without an entry) yields the key itself.
+    static func localizedCatalogValue(
+        for key: String,
+        preferredLanguages: [String],
+        bundle: Bundle = .main
+    ) throws -> String {
+        let language = Bundle.preferredLocalizations(
+            from: bundle.localizations,
+            forPreferences: preferredLanguages
+        ).first
+        return try localizedCatalogValue(for: key, resolvedLanguage: language)
     }
 
     static func localizedCatalogValueForCurrentLocale(for key: String, bundle: Bundle = .main) throws -> String {
-        try localizedCatalogValue(
-            for: key,
-            preferredLanguages: bundle.preferredLocalizations + Locale.preferredLanguages
-        )
+        try localizedCatalogValue(for: key, resolvedLanguage: bundle.preferredLocalizations.first)
+    }
+
+    private static func localizedCatalogValue(for key: String, resolvedLanguage: String?) throws -> String {
+        let localizations = try catalogLocalizations(for: key)
+        guard let resolvedLanguage,
+              let languageEntry = localizations[resolvedLanguage] as? [String: Any],
+              let stringUnit = languageEntry["stringUnit"] as? [String: Any],
+              let value = stringUnit["value"] as? String else {
+            return key
+        }
+        return value
     }
 
     private static func cleanupStaleDirectories() {
@@ -120,30 +128,6 @@ enum TestSupport {
         let strings = try XCTUnwrap(object["strings"] as? [String: Any])
         let entry = try XCTUnwrap(strings[key] as? [String: Any], "Missing catalog entry for key: \(key)")
         return try XCTUnwrap(entry["localizations"] as? [String: Any], "Missing localizations for key: \(key)")
-    }
-
-    private static func normalizedLanguageCandidates(from identifiers: [String]) -> [String] {
-        var candidates: [String] = []
-        var seen = Set<String>()
-
-        func append(_ identifier: String) {
-            guard !identifier.isEmpty, seen.insert(identifier).inserted else { return }
-            candidates.append(identifier)
-        }
-
-        for identifier in identifiers {
-            append(identifier)
-
-            let normalized = identifier.replacingOccurrences(of: "_", with: "-")
-            append(normalized)
-
-            if let languageCode = normalized.split(separator: "-").first {
-                append(String(languageCode))
-            }
-        }
-
-        append("en")
-        return candidates
     }
 }
 
